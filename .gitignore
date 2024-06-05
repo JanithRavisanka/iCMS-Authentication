@@ -1,0 +1,21 @@
+write gitignore for fastapi project in this .gitignore file
+
+.env
+__pycache__
+.vscode
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.idea
+*.venv
+
+
+

@@ -1,22 +1,13 @@
-# wriote docker file for this fast api rest api
-# Use the official image as a parent image
-FROM tiangolo/uvicorn-gunicorn-fastapi:python3.8
+FROM python:3.10-slim
 
-# Set the working directory
-WORKDIR /app
+WORKDIR code
 
+EXPOSE 8000
 
-# Copy the current directory contents into the container at /app
-COPY /app /app
+COPY ./requirements.txt /code/requirements.txt
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip --timeout=1000 install --no-cache-dir --upgrade -r /code/requirements.txt
 
+COPY ./app /code/app
 
-#define the environment variables
-#ENV aws_access_key_id=
-#ENV VARIABLE_NAME=app
-
-
-# Make port 80 available to the world outside this container
-EXPOSE 80
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
