@@ -80,6 +80,7 @@ jobs:
                 containers:
                   - name: fastapi
                     image: ${{ secrets.DOCKER_USERNAME }}/my-app:latest
+                    platform: linux/arm64
                     ports:
                       - containerPort: 8000
                     env:
