@@ -60,8 +60,8 @@ jobs:
 
       - name: Deploy to EKS
         run: |
-          aws eks update-kubeconfig --name my-cluster --validate=false
-          kubectl apply -f - <<EOF
+          aws eks update-kubeconfig --name my-cluster
+          kubectl apply --validate=false -f - <<EOF
           apiVersion: apps/v1
           kind: Deployment
           metadata:
@@ -79,7 +79,6 @@ jobs:
                 containers:
                   - name: fastapi
                     image: ${{ secrets.DOCKER_USERNAME }}/my-app:latest
-                    platform: linux/arm64
                     ports:
                       - containerPort: 8000
                     env:
