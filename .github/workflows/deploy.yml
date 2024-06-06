@@ -31,7 +31,7 @@ jobs:
           context: .
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/my-app:latest
-          platforms: linux/amd64/v8
+          platforms: linux/arm64
 
       - name: Logout from Docker Hub
         run: docker logout
