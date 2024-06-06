@@ -60,10 +60,9 @@ jobs:
 
       - name: Deploy to EKS
         run: |
-          aws eks update-kubeconfig --name my-cluster
+          aws eks update-kubeconfig --name my-cluster --validate=false
           kubectl apply -f - <<EOF
           apiVersion: apps/v1
-          --validate=false
           kind: Deployment
           metadata:
             name: fastapi-app
