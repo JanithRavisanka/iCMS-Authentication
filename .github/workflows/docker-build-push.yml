@@ -31,7 +31,14 @@ jobs:
           context: .
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/my-app:latest
-          platforms: linux/arm64
 
       - name: Logout from Docker Hub
         run: docker logout
+
+      - name: Trigger AWS Deploy Workflow
+        run: |
+          curl -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/dispatches \
+            -d '{"event_type":"deploy_to_aws"}'
