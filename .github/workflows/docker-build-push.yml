@@ -79,5 +79,5 @@ jobs:
           EB_ENV_NAME: my-fastapi-env
           DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/my-app:${{ steps.create_tag.outputs.new_tag }}
         run: |
-          aws elasticbeanstalk create-application-version --application-name $EB_APP_NAME --version-label $GITHUB_SHA --source-bundle S3Bucket=janiths3,S3Key=my-app.zip
+          aws elasticbeanstalk create-application-version --application-name icsms-auth --version-label $GITHUB_SHA --source-bundle S3Bucket=janiths3,S3Key=my-app.zip
           aws elasticbeanstalk update-environment --application-name $EB_APP_NAME --environment-name $EB_ENV_NAME --version-label $GITHUB_SHA
