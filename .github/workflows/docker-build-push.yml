@@ -21,6 +21,8 @@ jobs:
           WITH_V: true
           DEFAULT_BUMP: patch
 
+      - name: Print new tag
+        run: echo "New tag is ${{ steps.create_tag.outputs.new_tag }}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
