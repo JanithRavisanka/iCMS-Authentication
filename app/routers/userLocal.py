@@ -1,17 +1,10 @@
-import random
-
-from fastapi import APIRouter, Depends, Body, UploadFile, File, Response
-from starlette.responses import JSONResponse
-from pydantic import BaseModel
-
-from app.utils.auth import role_required, get_current_user
-from typing import Annotated
 from boto3 import client
-from app.config.config import Config
+from fastapi import APIRouter, Depends, Body, UploadFile, File, Response
+from pydantic import BaseModel
+from starlette.responses import JSONResponse
 
-from app.models.newUser import NewUser
-from app.models.adminUser import DeleteUser
-from app.models.localUser import User
+from app.config.config import Config
+from app.utils.auth import get_current_user
 
 user_router = APIRouter()
 

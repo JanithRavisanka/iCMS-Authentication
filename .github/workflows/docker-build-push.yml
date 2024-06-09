@@ -23,6 +23,11 @@ jobs:
       - name: Print new tag
         run: echo "New tag is ${{ steps.create_tag.outputs.new_tag }}"
 
+      - name: Update Dockerrun.aws.json
+        run: |
+          sed -i 's|<DOCKER_IMAGE>|${{ secrets.DOCKER_USERNAME }}/my-app:${{ steps.create_tag.outputs.new_tag }}|g' Dockerrun.aws.json
+      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 

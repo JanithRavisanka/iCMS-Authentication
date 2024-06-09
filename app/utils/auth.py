@@ -1,7 +1,7 @@
 import requests
-from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
 from pydantic import BaseModel
 
 from app.config.config import Config
@@ -30,12 +30,20 @@ security = HTTPBearer()
 
 
 def decode_jwt(token: str):
+    global cognito_public_keys
     try:
         header = jwt.get_unverified_header(token)
         key = next(k for k in cognito_public_keys if k['kid'] == header['kid'])
         return jwt.decode(token, key, algorithms=['RS256'], audience=cognito_app_client_id)
-    except JWTError as e:
-        raise HTTPException(status_code=403, detail="Could not validate credentials")
+    except JWTError:
+        # If verification fails, try to fetch the keys again
+        header = jwt.get_unverified_header(token)
+        cognito_public_keys = get_cognito_public_keys()
+        try:
+            key = next(k for k in cognito_public_keys if k['kid'] == header['kid'])
+            return jwt.decode(token, key, algorithms=['RS256'], audience=cognito_app_client_id)
+        except JWTError:
+            raise HTTPException(status_code=403, detail="Could not validate credentials")
 
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
