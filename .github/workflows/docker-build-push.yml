@@ -197,7 +197,7 @@ jobs:
 
       - name: Update ECS service
         run: |
-          aws ecs update-service --cluster ${{ secrets.ECS_CLUSTER_NAME }} --service ${{ secrets.ECS_SERVICE_NAME }} --force-new-deployment --desired-count 1 --task-definition icsms-auth:1
+          aws ecs update-service --cluster ${{ secrets.ECS_CLUSTER_NAME }} --service ${{ secrets.ECS_SERVICE_NAME }} --force-new-deployment --desired-count 1 --task-definition icsms-auth:2
 
 #name: Build, Push, and Deploy Docker Image
 #
