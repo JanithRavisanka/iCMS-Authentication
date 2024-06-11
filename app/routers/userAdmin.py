@@ -1,15 +1,15 @@
 import os
-
-from fastapi import APIRouter, Depends, Body, UploadFile, File
-from app.utils.auth import role_required, get_current_user
 from typing import Annotated
-from boto3 import client
-from app.config.config import Config
 
-from app.models.newUser import NewUser
-from app.models.adminUser import DeleteUser
-from app.models.localUser import User
+from boto3 import client
 from dotenv import load_dotenv
+from fastapi import APIRouter, Depends, Body, Query
+from pydantic import BaseModel
+
+from app.config.config import Config
+from app.models.adminUser import DeleteUser
+from app.models.newUser import NewUser
+from app.utils.auth import role_required
 
 load_dotenv()
 
@@ -20,7 +20,6 @@ aws_default_region = os.getenv('AWS_DEFAULT_REGION')
 print(aws_access_key_id)
 print(aws_secret_access_key)
 
-
 admin_router = APIRouter()
 cognito_client = client(
     'cognito-idp',
@@ -28,6 +27,8 @@ cognito_client = client(
     aws_access_key_id=aws_access_key_id,
     aws_secret_access_key=aws_secret_access_key
 )
+
+
 @admin_router.get("/admin")
 async def admin_route(user=Depends(role_required("Admin"))):
     return {"message": "Hello Admin", "user": user}
@@ -79,12 +80,24 @@ async def get_all_users(current_user: Annotated[any, Depends(role_required("Admi
     return [user['Username'] for user in response['Users']]
 
 
+class groupPermissions(BaseModel):
+    name: str
+    value: bool
+
+
+class userGroup(BaseModel):
+    group_name: str
+    permissions: list[groupPermissions]
+
+
 @admin_router.post("/createUserGroup")
-async def create_user_group(group_name: str = Body(...), current_user=Depends(role_required("Admin"))):
+async def create_user_group(user_group: userGroup = Body(...), current_user=Depends(role_required("Admin"))):
     response = cognito_client.create_group(
-        GroupName=group_name,
-        UserPoolId=Config.cognito_pool_id
+        GroupName=user_group.group_name,
+        UserPoolId=Config.cognito_pool_id,
+        Description=f"{user_group.permissions}"
     )
+    print(user_group.permissions)
     return response
 
 
@@ -96,27 +109,62 @@ async def add_user_to_group(username: str = Body(...), group_name: str = Body(..
         Username=username,
         GroupName=group_name,
     )
+
     return response
 
 
-#list user groups
-@admin_router.get("/getUserGroups")
+# list user groups
+@admin_router.get("/UserGroups")
 async def list_user_groups(current_user=Depends(role_required("Admin"))):
+    groups = []
+    group_data = []
     response = cognito_client.list_groups(
         UserPoolId=Config.cognito_pool_id
+    )
+    for group in response['Groups']:
+        groups.append(group['GroupName'])
+
+    for group in groups:
+        response = cognito_client.list_users_in_group(
+            UserPoolId=Config.cognito_pool_id,
+            GroupName=group
+        )
+        group_data.append({"group_name": group, "number_of_users": len(response['Users'])})
+
+    print(group_data)
+
+    return group_data
+
+
+@admin_router.delete("/UserGroups")
+async def delete_user_group(group_name: str = Query(...), current_user=Depends(role_required("Admin"))):
+    print(group_name)
+
+    response = cognito_client.delete_group(
+        UserPoolId=Config.cognito_pool_id,
+        GroupName=group_name
     )
     return response
 
 
-#gt all user names, emails and their roles
+@admin_router.get("/getGroupDetails")
+async def get_group_details(group_name: str = Query(...), current_user=Depends(role_required("Admin"))):
+    response = cognito_client.get_group(
+        UserPoolId=Config.cognito_pool_id,
+        GroupName=group_name
+    )
+    return response
+
+
+# gt all user names, emails and their roles
 @admin_router.get("/getAllUsers")
 async def get_all_users(current_user=Depends(role_required("Admin"))):
     response = cognito_client.list_users(
         UserPoolId=Config.cognito_pool_id
     )
-    users_name = [user['Username']  for user in response['Users']]
+    users_name = [user['Username'] for user in response['Users']]
 
-    #for every user in the list of users, get their email and roles
+    # for every user in the list of users, get their email and roles
     users = []
     for user in users_name:
         user_data = cognito_client.admin_get_user(
@@ -125,7 +173,7 @@ async def get_all_users(current_user=Depends(role_required("Admin"))):
         )
         user_email = [attr['Value'] for attr in user_data['UserAttributes'] if attr['Name'] == 'email'][0]
 
-        #get user groups
+        # get user groups
         user_groups = cognito_client.admin_list_groups_for_user(
             Username=user,
             UserPoolId=Config.cognito_pool_id
@@ -137,7 +185,13 @@ async def get_all_users(current_user=Depends(role_required("Admin"))):
         })
 
     return users
-    
-    
 
 
+# list members of a group using query parameter group_name
+@admin_router.get("/getGroupMembers")
+async def get_group_members(group_name: str = Query(...), current_user=Depends(role_required("Admin"))):
+    response = cognito_client.list_users_in_group(
+        UserPoolId=Config.cognito_pool_id,
+        GroupName=group_name
+    )
+    return response

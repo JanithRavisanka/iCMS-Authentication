@@ -45,44 +45,10 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/my-app:${{ steps.create_tag.outputs.new_tag }}
+          tags: ${{ secrets.DOCKER_USERNAME }}/icsms-auth:${{ steps.create_tag.outputs.new_tag }}
 
       - name: Logout from Docker Hub
         run: docker logout
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
 
-      - name: Install AWS CLI
-        run: |
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip awscliv2.zip
-          sudo ./aws/install --update
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
-
-      - name: Zip Dockerrun.aws.json
-        run: zip -r my-app.zip Dockerrun.aws.json
-
-      - name: Upload to S3
-        run: |
-          aws s3 cp my-app.zip s3://janiths3/my-app.zip
-
-      - name: Deploy to Elastic Beanstalk
-        env:
-          EB_APP_NAME: icsms-auth
-          EB_ENV_NAME: Icsms-auth-env
-          DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/my-app:${{ steps.create_tag.outputs.new_tag }}
-        run: |
-          aws elasticbeanstalk create-application-version --application-name $EB_APP_NAME --version-label $GITHUB_SHA --source-bundle S3Bucket=janiths3,S3Key=my-app.zip
-          aws elasticbeanstalk update-environment --application-name $EB_APP_NAME --environment-name $EB_ENV_NAME --version-label $GITHUB_SHA
