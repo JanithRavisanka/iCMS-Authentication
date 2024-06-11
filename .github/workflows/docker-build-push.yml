@@ -103,7 +103,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/my-app:${{ steps.create_tag.outputs.new_tag }}
+          tags: ${{ secrets.DOCKER_USERNAME }}/icsms-auth:${{ steps.create_tag.outputs.new_tag }}
           platforms: linux/arm64
 
       - name: Logout from Docker Hub
