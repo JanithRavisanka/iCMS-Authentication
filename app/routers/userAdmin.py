@@ -85,19 +85,33 @@ class groupPermissions(BaseModel):
     value: bool
 
 
+class User(BaseModel):
+    user_name: str
+
+
 class userGroup(BaseModel):
     group_name: str
     permissions: list[groupPermissions]
+    users: list[User]
 
 
 @admin_router.post("/createUserGroup")
-async def create_user_group(user_group: userGroup = Body(...), current_user=Depends(role_required("Admin"))):
+async def create_user_group(user_group: userGroup = Body(...),
+                            current_user=Depends(role_required("Admin"))):
     response = cognito_client.create_group(
         GroupName=user_group.group_name,
         UserPoolId=Config.cognito_pool_id,
         Description=f"{user_group.permissions}"
     )
-    print(user_group.permissions)
+
+    # add users to the group
+    for user in user_group.users:
+        res = cognito_client.admin_add_user_to_group(
+            UserPoolId=Config.cognito_pool_id,
+            Username=user.user_name,
+            GroupName=user_group.group_name
+        )
+
     return response
 
 
@@ -154,6 +168,14 @@ async def get_group_details(group_name: str = Query(...), current_user=Depends(r
         GroupName=group_name
     )
     return response
+
+
+@admin_router.get("/getAllUsersNames")
+async def get_user_names(current_user=Depends(role_required("Admin"))):
+    response = cognito_client.list_users(
+        UserPoolId=Config.cognito_pool_id
+    )
+    return [{"user_name": user['Username']} for user in response['Users']]
 
 
 # gt all user names, emails and their roles
