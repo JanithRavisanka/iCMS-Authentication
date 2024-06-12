@@ -22,9 +22,6 @@ async def read_users_me(current_user=Depends(get_current_user)):
     return current_user
 
 
-
-
-
 @user_router.post("/uploadProfileImage")
 async def upload_profile_image(file: UploadFile = File(...), user=Depends(get_current_user)):
     # upload file to s3 bucket and get the url
@@ -67,14 +64,16 @@ async def get_user_profile_data(user=Depends(get_current_user), response=Respons
 
     return JSONResponse(content=data, headers=headers)
 
+
 class ChangePassword(BaseModel):
     current_password: str = Body(..., embed=True)
     new_password: str = Body(..., embed=True)
 
 
 @user_router.post("/changePassword")
-async def change_password(current_password: str = Body(...) ,new_password: str = Body(...), user=Depends(get_current_user)):
-    #check if the current password is correct
+async def change_password(current_password: str = Body(...), new_password: str = Body(...),
+                          user=Depends(get_current_user)):
+    # check if the current password is correct
     try:
         cognito_client.admin_initiate_auth(
             UserPoolId=Config.cognito_pool_id,

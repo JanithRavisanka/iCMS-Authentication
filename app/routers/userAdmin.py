@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, Body, Query
 from pydantic import BaseModel
 
 from app.config.config import Config
-from app.models.adminUser import DeleteUser
 from app.models.newUser import NewUser
 from app.utils.auth import role_required
 
@@ -35,7 +34,8 @@ async def admin_route(user=Depends(role_required("Admin"))):
 
 
 @admin_router.post("/newUser")
-async def create_new_user(new_user: Annotated[NewUser, Body()]):
+async def create_new_user(new_user: Annotated[NewUser, Body()],
+                          current_user: Annotated[any, Depends(role_required("Admin"))]):
     response = cognito_client.admin_create_user(
         UserPoolId=Config.cognito_pool_id,
         Username=new_user.username,
@@ -45,25 +45,34 @@ async def create_new_user(new_user: Annotated[NewUser, Body()]):
                 'Name': 'email',
                 'Value': new_user.email
             },
-        ]
+            {
+                'Name': 'email_verified',
+                'Value': 'true'
+            },
+            {
+                'Name': 'custom:phone_number',
+                'Value': new_user.phone_number
+            }
+        ],
+        DesiredDeliveryMediums=['EMAIL']
+
 
     )
     return response
 
 
-@admin_router.post("/deleteUser")
+@admin_router.delete("/deleteUser/{username}")
 async def delete_user(
-        delete_user: Annotated[DeleteUser, Body()],
-        current_user: Annotated[any, Depends(role_required("Admin"))]
+        username: str,
+        current_user: Annotated[any, Depends(role_required("Admin"))],
 ):
     permit_roles = ["Admin"]
-    print(delete_user)
     print(current_user.roles)
     if not (set(permit_roles) & set(current_user.roles)):
         return {"message": "You do not have access to this resource"}
     response = cognito_client.admin_delete_user(
         UserPoolId=Config.cognito_pool_id,
-        Username=delete_user.username
+        Username=username
     )
     return response
 
