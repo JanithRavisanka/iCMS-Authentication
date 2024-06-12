@@ -113,7 +113,7 @@ jobs:
         id: task-def
         run: |
           TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition icsms-auth:2)
-          NEW_TASK_DEF=$(echo $TASK_DEFINITION | jq --arg IMAGE "$DOCKER_IMAGE" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | .containerDefinitions[0].environment = [{"name":"AWS_ACCESS_KEY_ID","value":${{ secrets.AWS_ACCESS_KEY_ID }}},{"name":"AWS_REGION","value":${{ secrets.AWS_DEFAULT_REGION }}},{"name":"AWS_SECRET_ACCESS_KEY","value":${{ secrets.AWS_SECRET_ACCESS_KEY }}}]')
+          NEW_TASK_DEF=$(echo $TASK_DEFINITION | jq --arg IMAGE "${{ secrets.DOCKER_USERNAME }}/icsms-auth:${{ steps.create_tag.outputs.new_tag }}" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | .containerDefinitions[0].environment = [{"name":"AWS_ACCESS_KEY_ID","value":${{ secrets.AWS_ACCESS_KEY_ID }}},{"name":"AWS_REGION","value":${{ secrets.AWS_DEFAULT_REGION }}},{"name":"AWS_SECRET_ACCESS_KEY","value":${{ secrets.AWS_SECRET_ACCESS_KEY }}}]')
           NEW_REVISION=$(aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF" | jq '.taskDefinition.taskDefinitionArn')
 
           echo "New task definition revision: $NEW_REVISION"
