@@ -1,58 +1,58 @@
-##name: Build, Push, and Deploy Docker Image
-##
-##on:
-##  push:
-##    branches:
-##      - master
-##
-##jobs:
-##  build:
-##    runs-on: ubuntu-latest
-##
-##    steps:
-##      - name: Checkout repository
-##        uses: actions/checkout@v3
-##
-##      - name: Bump version and push tag
-##        id: create_tag
-##        uses: mathieudutour/github-tag-action@v5
-##        with:
-##          github_token: ${{ secrets.GH_TOKEN }}
-##          default_bump: patch
-##
-##      - name: Print new tag
-##        run: echo "New tag is ${{ steps.create_tag.outputs.new_tag }}"
-##
-##      - name: Update Dockerrun.aws.json
-##        run: |
-##          sed -i 's|<DOCKER_IMAGE>|${{ secrets.DOCKER_USERNAME }}/my-app:${{ steps.create_tag.outputs.new_tag }}|g' Dockerrun.aws.json
-##
-##
-##      - name: Set up Docker Buildx
-##        uses: docker/setup-buildx-action@v2
-##
-##      - name: Log in to Docker Hub
-##        uses: docker/login-action@v2
-##        with:
-##          username: ${{ secrets.DOCKER_USERNAME }}
-##          password: ${{ secrets.DOCKER_PASSWORD }}
-##
-##      - name: Set up QEMU
-##        uses: docker/setup-qemu-action@v2
-##
-##      - name: Build and push Docker image
-##        uses: docker/build-push-action@v4
-##        with:
-##          context: .
-##          push: true
-##          tags: ${{ secrets.DOCKER_USERNAME }}/icsms-auth:${{ steps.create_tag.outputs.new_tag }}
-##          platforms: linux/arm64
-##
-##      - name: Logout from Docker Hub
-##        run: docker logout
+#name: Build, Push, and Deploy Docker Image
+#
+#on:
+#  push:
+#    branches:
+#      - master
+#
+#jobs:
+#  build:
+#    runs-on: ubuntu-latest
+#
+#    steps:
+#      - name: Checkout repository
+#        uses: actions/checkout@v3
+#
+#      - name: Bump version and push tag
+#        id: create_tag
+#        uses: mathieudutour/github-tag-action@v5
+#        with:
+#          github_token: ${{ secrets.GH_TOKEN }}
+#          default_bump: patch
+#
+#      - name: Print new tag
+#        run: echo "New tag is ${{ steps.create_tag.outputs.new_tag }}"
+#
+#      - name: Update Dockerrun.aws.json
+#        run: |
+#          sed -i 's|<DOCKER_IMAGE>|${{ secrets.DOCKER_USERNAME }}/my-app:${{ steps.create_tag.outputs.new_tag }}|g' Dockerrun.aws.json
 #
 #
-
+#      - name: Set up Docker Buildx
+#        uses: docker/setup-buildx-action@v2
+#
+#      - name: Log in to Docker Hub
+#        uses: docker/login-action@v2
+#        with:
+#          username: ${{ secrets.DOCKER_USERNAME }}
+#          password: ${{ secrets.DOCKER_PASSWORD }}
+#
+#      - name: Set up QEMU
+#        uses: docker/setup-qemu-action@v2
+#
+#      - name: Build and push Docker image
+#        uses: docker/build-push-action@v4
+#        with:
+#          context: .
+#          push: true
+#          tags: ${{ secrets.DOCKER_USERNAME }}/icsms-auth:${{ steps.create_tag.outputs.new_tag }}
+#          platforms: linux/arm64
+#
+#      - name: Logout from Docker Hub
+#        run: docker logout
+#
+#
+#
 
 name: Build, Push, and Deploy Docker Image
 
@@ -64,9 +64,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    outputs:
-      new_tag: ${{ steps.create_tag.outputs.new_tag }}
 
     steps:
       - name: Checkout repository
@@ -81,10 +78,6 @@ jobs:
 
       - name: Print new tag
         run: echo "New tag is ${{ steps.create_tag.outputs.new_tag }}"
-
-      - name: Update Dockerrun.aws.json
-        run: |
-          sed -i 's|<DOCKER_IMAGE>|${{ secrets.DOCKER_USERNAME }}/icsms-auth:${{ steps.create_tag.outputs.new_tag }}|g' Dockerrun.aws.json
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -109,21 +102,23 @@ jobs:
       - name: Logout from Docker Hub
         run: docker logout
 
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
+      - name: Update ECS task definition
+        id: task-def
+        run: |
+          TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition icsms-auth:2)
+          NEW_TASK_DEF=$(echo $TASK_DEFINITION | jq --arg IMAGE "$DOCKER_IMAGE" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | .containerDefinitions[0].environment = [{"name":"AWS_ACCESS_KEY_ID","value":${{ secrets.AWS_ACCESS_KEY_ID }}},{"name":"AWS_REGION","value":${{ secrets.AWS_DEFAULT_REGION }}},{"name":"AWS_SECRET_ACCESS_KEY","value":${{ secrets.AWS_SECRET_ACCESS_KEY }}}]')
+          NEW_REVISION=$(aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF" | jq '.taskDefinition.taskDefinitionArn')
+
+          echo "New task definition revision: $NEW_REVISION"
+          echo "::set-output name=new_task_def_arn::$NEW_REVISION"
+
       - name: Update ECS service
         run: |
-          aws ecs update-service --cluster ${{ secrets.ECS_CLUSTER_NAME }} --service ${{ secrets.ECS_SERVICE_NAME }} --force-new-deployment --desired-count 1 --task-definition icsms-auth:2
+          aws ecs update-service --cluster icsms --service icsms-auth-api --task-definition ${{ steps.task-def.outputs.new_task_def_arn }}
