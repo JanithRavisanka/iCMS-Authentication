@@ -56,8 +56,15 @@ async def create_new_user(new_user: Annotated[NewUser, Body()],
             }
         ],
         DesiredDeliveryMediums=['EMAIL']
-
     )
+
+    roles = new_user.roles
+    for role in roles:
+        response = cognito_client.admin_add_user_to_group(
+            UserPoolId=Config.cognito_pool_id,
+            Username=new_user.username,
+            GroupName=role
+        )
     return response
 
 
@@ -67,7 +74,7 @@ async def delete_user(
         current_user: Annotated[any, Depends(role_required("Admin"))],
 ):
     permit_roles = ["Admin"]
-    # print(current_user.roles)
+
     if not (set(permit_roles) & set(current_user.roles)):
         return {"message": "You do not have access to this resource"}
     response = cognito_client.admin_delete_user(
@@ -248,4 +255,68 @@ async def get_user_details(username: str = Query(...), current_user=Depends(role
         UserPoolId=Config.cognito_pool_id,
         Username=username
     )
+    return response
+
+
+# update the user group attributes
+@admin_router.put('/updateRole', tags=['Roles'])
+async def update_role(group_name: str = Body(...), permissions: list[groupPermissions] = Body(...),
+                      current_user=Depends(role_required("Admin"))):
+    p = []
+    for permission in permissions:
+        p.append({
+            'Name': permission.name,
+            'Value': str(permission.value).lower()
+        })
+    p = str(p)
+    response = cognito_client.update_group(
+        UserPoolId=Config.cognito_pool_id,
+        GroupName=group_name,
+        Description=p
+    )
+    return response
+
+
+@admin_router.put("/updateUser", tags=['Admin-Users'])
+async def update_user(new_user: Annotated[NewUser, Body()],
+                      current_user: Annotated[any, Depends(role_required("Admin"))]):
+    response = cognito_client.admin_update_user_attributes(
+        UserPoolId=Config.cognito_pool_id,
+        Username=new_user.username,
+        UserAttributes=[
+            {
+                'Name': 'email',
+                'Value': new_user.email
+            },
+            {
+                'Name': 'email_verified',
+                'Value': 'true'
+            },
+            {
+                'Name': 'custom:phone_number',
+                'Value': new_user.phone_number
+            }
+        ]
+    )
+
+    roles = new_user.roles
+    # remove the user from all groups
+    response = cognito_client.admin_list_groups_for_user(
+        Username=new_user.username,
+        UserPoolId=Config.cognito_pool_id
+    )
+    for group in response['Groups']:
+        response = cognito_client.admin_remove_user_from_group(
+            UserPoolId=Config.cognito_pool_id,
+            Username=new_user.username,
+            GroupName=group['GroupName']
+        )
+
+    for role in roles:
+        response = cognito_client.admin_add_user_to_group(
+            UserPoolId=Config.cognito_pool_id,
+            Username=new_user.username,
+            GroupName=role
+        )
+
     return response
