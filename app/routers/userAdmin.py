@@ -1,4 +1,3 @@
-import json
 import os
 from typing import Annotated, Optional
 
@@ -9,6 +8,12 @@ from pydantic import BaseModel
 
 from app.config.config import Config
 from app.models.newUser import NewUser
+from app.utils.admin_functions import sign_up_user, verify_user_email, add_user_to_roles, send_password_email, \
+    delete_user_from_cognito, check_user_role, retrieve_all_users, create_permissions_list, create_group, \
+    add_users_to_group, add_user_to_cognito_group, retrieve_all_groups, retrieve_users_in_group, retrieve_group_details, \
+    process_permissions, retrieve_all_usernames, retrieve_user_details, retrieve_user_groups, retrieve_all_usernames_2, \
+    retrieve_group_members, prepare_permissions, update_group, update_user_attributes, get_user_groups, \
+    remove_user_from_all_groups, add_user_to_new_groups, disable_user_in_cognito
 from app.utils.auth import role_required
 
 load_dotenv()
@@ -28,44 +33,34 @@ cognito_client = client(
     aws_secret_access_key=aws_secret_access_key
 )
 
-
-@admin_router.get("/admin")
-async def admin_route(user=Depends(role_required("Admin"))):
-    return {"message": "Hello Admin", "user": user}
+ses_client = client('ses', region_name=aws_default_region)
 
 
 @admin_router.post("/newUser", tags=['Admin-Users'])
 async def create_new_user(new_user: Annotated[NewUser, Body()],
                           current_user: Annotated[any, Depends(role_required("Admin"))]):
-    response = cognito_client.admin_create_user(
+    response = await sign_up_user(new_user)
+    if 'success' not in response:
+        return response
+
+    response = await verify_user_email(new_user)
+    if 'success' not in response:
+        return response
+
+    cognito_client.admin_confirm_sign_up(
         UserPoolId=Config.cognito_pool_id,
-        Username=new_user.username,
-        TemporaryPassword=new_user.password,
-        UserAttributes=[
-            {
-                'Name': 'email',
-                'Value': new_user.email
-            },
-            {
-                'Name': 'email_verified',
-                'Value': 'true'
-            },
-            {
-                'Name': 'custom:phone_number',
-                'Value': new_user.phone_number
-            }
-        ],
-        DesiredDeliveryMediums=['EMAIL']
+        Username=new_user.username
     )
 
-    roles = new_user.roles
-    for role in roles:
-        response = cognito_client.admin_add_user_to_group(
-            UserPoolId=Config.cognito_pool_id,
-            Username=new_user.username,
-            GroupName=role
-        )
-    return response
+    response = await add_user_to_roles(new_user)
+    if 'success' not in response:
+        return response
+
+    response = await send_password_email(new_user)
+    if 'success' not in response:
+        return response
+
+    return {"message": "User created successfully"}
 
 
 @admin_router.delete("/deleteUser/{username}", tags=['Admin-Users'])
@@ -77,23 +72,23 @@ async def delete_user(
 
     if not (set(permit_roles) & set(current_user.roles)):
         return {"message": "You do not have access to this resource"}
-    response = cognito_client.admin_delete_user(
-        UserPoolId=Config.cognito_pool_id,
-        Username=username
-    )
+
+    response = await delete_user_from_cognito(username)
+
     return response
 
 
 @admin_router.get("/allUsers", tags=['Admin-Users'])
 async def get_all_users(current_user: Annotated[any, Depends(role_required("Admin"))]):
     permit_roles = ["Admin"]
-    if not (set(permit_roles) & set(current_user.roles)):
-        return {"message": "You do not have access to this resource"}
-    response = cognito_client.list_users(
-        UserPoolId=Config.cognito_pool_id
-    )
-    # only get the username
-    return [user['Username'] for user in response['Users']]
+
+    check_role_response = await check_user_role(current_user, permit_roles)
+    if 'success' not in check_role_response:
+        return check_role_response
+
+    users = await retrieve_all_users()
+
+    return users
 
 
 class groupPermissions(BaseModel):
@@ -114,36 +109,22 @@ class userGroup(BaseModel):
 @admin_router.post("/createUserGroup", tags=['Roles'])
 async def create_user_group(user_group: userGroup = Body(...),
                             current_user=Depends(role_required("Admin"))):
-    permissions = []
-    for permission in user_group.permissions:
-        permissions.append({
-            'Name': permission.name,
-            'Value': str(permission.value).lower()
-        })
-    response = cognito_client.create_group(
-        GroupName=user_group.group_name,
-        UserPoolId=Config.cognito_pool_id,
-        Description=f"{permissions}"
-    )
-
-    # add users to the group
-    for user in user_group.users:
-        res = cognito_client.admin_add_user_to_group(
-            UserPoolId=Config.cognito_pool_id,
-            Username=user.user_name,
-            GroupName=user_group.group_name
-        )
+    permissions = await create_permissions_list(user_group)
+    response = await create_group(user_group, permissions)
+    await add_users_to_group(user_group)
     return response
 
 
 @admin_router.post("/addUserToGroup", tags=['Admin-Users'])
 async def add_user_to_group(username: str = Body(...), group_name: str = Body(...),
                             current_user=Depends(role_required("Admin"))):
-    response = cognito_client.admin_add_user_to_group(
-        UserPoolId=Config.cognito_pool_id,
-        Username=username,
-        GroupName=group_name,
-    )
+    permit_roles = ["Admin"]
+
+    check_role_response = await check_user_role(current_user, permit_roles)
+    if 'success' not in check_role_response:
+        return check_role_response
+
+    response = await add_user_to_cognito_group(username, group_name)
 
     return response
 
@@ -151,22 +132,14 @@ async def add_user_to_group(username: str = Body(...), group_name: str = Body(..
 # list user groups
 @admin_router.get("/UserGroups", tags=['Roles'])
 async def list_user_groups(current_user=Depends(role_required("Admin"))):
-    groups = []
-    group_data = []
-    response = cognito_client.list_groups(
-        UserPoolId=Config.cognito_pool_id
-    )
-    for group in response['Groups']:
-        groups.append(group['GroupName'])
+    permit_roles = ["Admin"]
 
-    for group in groups:
-        response = cognito_client.list_users_in_group(
-            UserPoolId=Config.cognito_pool_id,
-            GroupName=group
-        )
-        group_data.append({"group_name": group, "number_of_users": len(response['Users'])})
+    check_role_response = await check_user_role(current_user, permit_roles)
+    if 'success' not in check_role_response:
+        return check_role_response
 
-    # print(group_data)
+    groups = await retrieve_all_groups()
+    group_data = [{"group_name": group, "number_of_users": await retrieve_users_in_group(group)} for group in groups]
 
     return group_data
 
@@ -184,56 +157,51 @@ async def delete_user_group(group_name: str = Query(...), current_user=Depends(r
 
 @admin_router.get("/getGroupDetails", tags=['Roles'])
 async def get_group_details(group_name: str = Query(...), current_user=Depends(role_required("Admin"))):
-    response = cognito_client.get_group(
-        UserPoolId=Config.cognito_pool_id,
-        GroupName=group_name
-    )
-    permission_string = response['Group']['Description']
-    permission_string = permission_string.replace("'", '"')
-    list_of_permissions = json.loads(permission_string)
+    permit_roles = ["Admin"]
 
-    response['Group']['Permissions'] = list_of_permissions
+    check_role_response = await check_user_role(current_user, permit_roles)
+    if 'success' not in check_role_response:
+        return check_role_response
 
-    # remove  description
-    del response['Group']['Description']
+    group_details = await retrieve_group_details(group_name)
+    processed_group_details = await process_permissions(group_details)
 
-    return response
+    return processed_group_details
 
 
 @admin_router.get("/getAllUsersNames", tags=['Admin-Users'])
-async def get_user_names(current_user=Depends(role_required("Admin"))):
-    response = cognito_client.list_users(
-        UserPoolId=Config.cognito_pool_id
-    )
-    return [{"user_name": user['Username']} for user in response['Users']]
+async def get_user_names(current_user: Annotated[any, Depends(role_required("Admin"))]):
+    permit_roles = ["Admin"]
+
+    check_role_response = await check_user_role(current_user, permit_roles)
+    if 'success' not in check_role_response:
+        return check_role_response
+
+    usernames = await retrieve_all_usernames()
+
+    return usernames
 
 
 # gt all user names, emails and their roles
 @admin_router.get("/getAllUsers", tags=['Admin-Users'])
-async def get_all_users(current_user=Depends(role_required("Admin"))):
-    response = cognito_client.list_users(
-        UserPoolId=Config.cognito_pool_id
-    )
-    users_name = [user['Username'] for user in response['Users']]
+async def get_all_users(current_user: Annotated[any, Depends(role_required("Admin"))]):
+    permit_roles = ["Admin"]
 
-    # for every user in the list of users, get their email and roles
+    check_role_response = await check_user_role(current_user, permit_roles)
+    if 'success' not in check_role_response:
+        return check_role_response
+
+    usernames = await retrieve_all_usernames_2()
+
     users = []
-    for user in users_name:
-        user_data = cognito_client.admin_get_user(
-            UserPoolId=Config.cognito_pool_id,
-            Username=user
-        )
-        user_email = [attr['Value'] for attr in user_data['UserAttributes'] if attr['Name'] == 'email'][0]
-
-        # get user groups
-        user_groups = cognito_client.admin_list_groups_for_user(
-            Username=user,
-            UserPoolId=Config.cognito_pool_id
-        )
+    for username in usernames:
+        user_email, status = await retrieve_user_details(username)
+        groups = await retrieve_user_groups(username)
         users.append({
-            "username": user,
+            "username": username,
             "email": user_email,
-            "groups": [group['GroupName'] for group in user_groups['Groups']]
+            "groups": groups,
+            "status": status
         })
 
     return users
@@ -242,11 +210,15 @@ async def get_all_users(current_user=Depends(role_required("Admin"))):
 # list members of a group using query parameter group_name
 @admin_router.get("/getGroupMembers", tags=['Roles'])
 async def get_group_members(group_name: str = Query(...), current_user=Depends(role_required("Admin"))):
-    response = cognito_client.list_users_in_group(
-        UserPoolId=Config.cognito_pool_id,
-        GroupName=group_name
-    )
-    return response
+    permit_roles = ["Admin"]
+
+    check_role_response = await check_user_role(current_user, permit_roles)
+    if 'success' not in check_role_response:
+        return check_role_response
+
+    group_members = await retrieve_group_members(group_name)
+
+    return group_members
 
 
 @admin_router.get('/getUserDetails', tags=['Admin-Users'])
@@ -255,6 +227,13 @@ async def get_user_details(username: str = Query(...), current_user=Depends(role
         UserPoolId=Config.cognito_pool_id,
         Username=username
     )
+
+    # get user groups and add it to the respone
+    user_groups = cognito_client.admin_list_groups_for_user(
+        Username=username,
+        UserPoolId=Config.cognito_pool_id
+    )
+    response['roles'] = [{'group_name': group['GroupName'], 'number_of_users': 0} for group in user_groups['Groups']]
     return response
 
 
@@ -262,61 +241,53 @@ async def get_user_details(username: str = Query(...), current_user=Depends(role
 @admin_router.put('/updateRole', tags=['Roles'])
 async def update_role(group_name: str = Body(...), permissions: list[groupPermissions] = Body(...),
                       current_user=Depends(role_required("Admin"))):
-    p = []
-    for permission in permissions:
-        p.append({
-            'Name': permission.name,
-            'Value': str(permission.value).lower()
-        })
-    p = str(p)
-    response = cognito_client.update_group(
-        UserPoolId=Config.cognito_pool_id,
-        GroupName=group_name,
-        Description=p
-    )
+    permit_roles = ["Admin"]
+
+    check_role_response = await check_user_role(current_user, permit_roles)
+    if 'success' not in check_role_response:
+        return check_role_response
+
+    prepared_permissions = await prepare_permissions(permissions)
+    response = await update_group(group_name, prepared_permissions)
+
     return response
 
 
+class UpdateUser(BaseModel):
+    username: str
+    email: str
+    phone_number: str
+    roles: list[str]
+
+
 @admin_router.put("/updateUser", tags=['Admin-Users'])
-async def update_user(new_user: Annotated[NewUser, Body()],
+async def update_user(new_user: Annotated[UpdateUser, Body()],
                       current_user: Annotated[any, Depends(role_required("Admin"))]):
-    response = cognito_client.admin_update_user_attributes(
-        UserPoolId=Config.cognito_pool_id,
-        Username=new_user.username,
-        UserAttributes=[
-            {
-                'Name': 'email',
-                'Value': new_user.email
-            },
-            {
-                'Name': 'email_verified',
-                'Value': 'true'
-            },
-            {
-                'Name': 'custom:phone_number',
-                'Value': new_user.phone_number
-            }
-        ]
-    )
+    permit_roles = ["Admin"]
 
-    roles = new_user.roles
-    # remove the user from all groups
-    response = cognito_client.admin_list_groups_for_user(
-        Username=new_user.username,
-        UserPoolId=Config.cognito_pool_id
-    )
-    for group in response['Groups']:
-        response = cognito_client.admin_remove_user_from_group(
-            UserPoolId=Config.cognito_pool_id,
-            Username=new_user.username,
-            GroupName=group['GroupName']
-        )
+    check_role_response = await check_user_role(current_user, permit_roles)
+    if 'success' not in check_role_response:
+        return check_role_response
 
-    for role in roles:
-        response = cognito_client.admin_add_user_to_group(
-            UserPoolId=Config.cognito_pool_id,
-            Username=new_user.username,
-            GroupName=role
-        )
+    update_attributes_response = await update_user_attributes(new_user)
+
+    user_groups = await get_user_groups(new_user.username)
+
+    remove_user_response = await remove_user_from_all_groups(new_user.username, user_groups)
+
+    add_user_response = await add_user_to_new_groups(new_user.username, new_user.roles)
+
+    return add_user_response
+
+
+@admin_router.put("/disableUser", tags=['Admin-Users'])
+async def disable_user(username: str = Body(...), current_user=Depends(role_required("Admin"))):
+    permit_roles = ["Admin"]
+
+    check_role_response = await check_user_role(current_user, permit_roles)
+    if 'success' not in check_role_response:
+        return check_role_response
+
+    response = await disable_user_in_cognito(username)
 
     return response
