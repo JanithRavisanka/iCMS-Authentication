@@ -332,3 +332,36 @@ async def disable_user_in_cognito(username):
         Username=username
     )
     return response
+
+
+# enable user
+async def check_user_disabled(username):
+    response = cognito_client.admin_get_user(
+        UserPoolId=Config.cognito_pool_id,
+        Username=username
+    )
+    return response
+
+
+async def enable_user_in_cognito(username):
+    response = cognito_client.admin_enable_user(
+        UserPoolId=Config.cognito_pool_id,
+        Username=username
+    )
+    return response
+
+
+# get user permissions
+async def process_group_descriptions(groups):
+    for group in groups['Groups']:
+        group['Description'] = eval(group['Description'])
+    return [group['Description'] for group in groups['Groups']]
+
+
+async def extract_permissions(permissions_list):
+    permissions = []
+    for permission in permissions_list:
+        for perm in permission:
+            if perm['Value'] == 'true':
+                permissions.append(perm['Name'])
+    return permissions
