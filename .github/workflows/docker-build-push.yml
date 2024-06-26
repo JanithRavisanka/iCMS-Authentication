@@ -150,7 +150,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: public.ecr.aws/n8h6p9m7/icsms-auth:${{ steps.create_tag.outputs.new_tag }}
+          tags: public.ecr.aws/n8h6p9m7/icsms-auth:latest
           platforms: linux/arm64
 
       - name: Logout from Docker
