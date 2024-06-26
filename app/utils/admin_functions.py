@@ -95,6 +95,8 @@ async def send_password_email(new_user):
                         <body>
                             <h1>Welcome to iCMS</h1>
                             <p>Hello {new_user.username},</p>
+                            <p>Your account has been created successfully.</p>
+                            <p>YOur user name is: <b>{new_user.username}</b></p>
                             <p>Your new password is: <b>{new_user.password}</b></p>
                             <p>Please change your password after logging in.</p>
                             <p>Thank you for using iCMS!</p>
