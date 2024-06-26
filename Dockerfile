@@ -40,6 +40,4 @@ COPY ./requirements.txt /${LAMBDA_TASK_ROOT}/requirements.txt
 
 RUN pip --timeout=1000 install --no-cache-dir --upgrade -r /${LAMBDA_TASK_ROOT}/requirements.txt
 
-
-
 CMD ["app.main.handler"]
