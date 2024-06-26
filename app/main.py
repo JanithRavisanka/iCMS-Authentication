@@ -1,14 +1,13 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from mangum import Mangum
 
 from app.routers.userAdmin import admin_router
 from app.routers.userLocal import user_router
 
 # Create a new FastAPI instance
 app = FastAPI()
-handler = Mangum(app)
+# handler = Mangum(app)
 
 app.add_middleware(
     CORSMiddleware,
