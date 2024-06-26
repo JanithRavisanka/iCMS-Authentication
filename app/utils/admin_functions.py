@@ -306,6 +306,7 @@ async def get_user_groups(username):
 
 
 async def remove_user_from_all_groups(username, groups):
+    response = None
     for group in groups['Groups']:
         response = cognito_client.admin_remove_user_from_group(
             UserPoolId=Config.cognito_pool_id,
@@ -316,6 +317,7 @@ async def remove_user_from_all_groups(username, groups):
 
 
 async def add_user_to_new_groups(username, roles):
+    response = None
     for role in roles:
         response = cognito_client.admin_add_user_to_group(
             UserPoolId=Config.cognito_pool_id,
