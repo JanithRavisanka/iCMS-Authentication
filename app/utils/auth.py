@@ -5,12 +5,14 @@ from jose import JWTError, jwt
 from pydantic import BaseModel
 
 from app.config.config import Config
+from app.utils.admin_functions import extract_permissions, get_user_groups, process_group_descriptions
 
 
 class TokenPayload(BaseModel):
     sub: str
     roles: list
     username: str
+    permissions: list
 
 
 cognito_region = Config.cognito_region
@@ -49,12 +51,19 @@ def decode_jwt(token: str):
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
     token = credentials.credentials
     payload = decode_jwt(token)
-    print(payload)
-    return TokenPayload(
+
+    # add user permissions to the payload
+    user_groups = await get_user_groups(payload['cognito:username'])
+    permissions_list = await process_group_descriptions(user_groups)
+    permissions = await extract_permissions(permissions_list)
+    tokenPayload = TokenPayload(
         sub=payload['sub'],
         roles=payload.get('cognito:groups', []),
-        username=payload['cognito:username']
+        username=payload['cognito:username'],
+        permissions=permissions
     )
+    # print(tokenPayload)
+    return tokenPayload
 
 
 def role_required(required_role: str):

@@ -3,19 +3,19 @@ from typing import Annotated, Optional
 
 from boto3 import client
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, Body, Query
+from fastapi import APIRouter, Depends, Body, Query, HTTPException
 from pydantic import BaseModel
 
 from app.config.config import Config
 from app.models.newUser import NewUser
 from app.utils.admin_functions import sign_up_user, verify_user_email, add_user_to_roles, send_password_email, \
-    delete_user_from_cognito, check_user_role, retrieve_all_users, create_permissions_list, create_group, \
+    delete_user_from_cognito, retrieve_all_users, create_permissions_list, create_group, \
     add_users_to_group, add_user_to_cognito_group, retrieve_all_groups, retrieve_users_in_group, retrieve_group_details, \
     process_permissions, retrieve_all_usernames, retrieve_user_details, retrieve_user_groups, retrieve_all_usernames_2, \
     retrieve_group_members, prepare_permissions, update_group, update_user_attributes, get_user_groups, \
     remove_user_from_all_groups, add_user_to_new_groups, disable_user_in_cognito, process_group_descriptions, \
     extract_permissions, check_user_disabled, enable_user_in_cognito
-from app.utils.auth import role_required
+from app.utils.auth import get_current_user
 
 load_dotenv()
 
@@ -59,9 +59,20 @@ class UpdateUser(BaseModel):
     roles: list[str]
 
 
+def check_permissions(current_user, required_permissions):
+    if not (set(required_permissions) & set(current_user.permissions)):
+        return {"message": "You do not have access to this resource"}
+    return {"success": True}
+
+
 @admin_router.post("/newUser", tags=['Admin-Users'])
 async def create_new_user(new_user: Annotated[NewUser, Body()],
-                          current_user: Annotated[any, Depends(role_required("Admin"))]):
+                          current_user: Annotated[any, Depends(get_current_user)]):
+    # check if the user has the required permissions
+    required_permissions = ["Add User"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
+
     response = await sign_up_user(new_user)
     if 'success' not in response:
         return response
@@ -89,12 +100,11 @@ async def create_new_user(new_user: Annotated[NewUser, Body()],
 @admin_router.delete("/deleteUser/{username}", tags=['Admin-Users'])
 async def delete_user(
         username: str,
-        current_user: Annotated[any, Depends(role_required("Admin"))],
+        current_user: Annotated[any, Depends(get_current_user)],
 ):
-    permit_roles = ["Admin"]
-
-    if not (set(permit_roles) & set(current_user.roles)):
-        return {"message": "You do not have access to this resource"}
+    required_permissions = ["Delete User"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     response = await delete_user_from_cognito(username)
 
@@ -102,12 +112,11 @@ async def delete_user(
 
 
 @admin_router.get("/allUsers", tags=['Admin-Users'])
-async def get_all_users(current_user: Annotated[any, Depends(role_required("Admin"))]):
-    permit_roles = ["Admin"]
-
-    check_role_response = await check_user_role(current_user, permit_roles)
-    if 'success' not in check_role_response:
-        return check_role_response
+async def get_all_users(current_user: Annotated[any, Depends(get_current_user)]):
+    print(current_user)
+    required_permissions = ["View Users"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     users = await retrieve_all_users()
 
@@ -116,7 +125,11 @@ async def get_all_users(current_user: Annotated[any, Depends(role_required("Admi
 
 @admin_router.post("/createUserGroup", tags=['Roles'])
 async def create_user_group(user_group: userGroup = Body(...),
-                            current_user=Depends(role_required("Admin"))):
+                            current_user=Depends(get_current_user)):
+    required_permissions = ["Add Role"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
+
     permissions = await create_permissions_list(user_group)
     response = await create_group(user_group, permissions)
     await add_users_to_group(user_group)
@@ -125,13 +138,10 @@ async def create_user_group(user_group: userGroup = Body(...),
 
 @admin_router.post("/addUserToGroup", tags=['Admin-Users'])
 async def add_user_to_group(username: str = Body(...), group_name: str = Body(...),
-                            current_user=Depends(role_required("Admin"))):
-    permit_roles = ["Admin"]
-
-    check_role_response = await check_user_role(current_user, permit_roles)
-    if 'success' not in check_role_response:
-        return check_role_response
-
+                            current_user=Depends(get_current_user)):
+    required_permissions = ["Add User To Group"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
     response = await add_user_to_cognito_group(username, group_name)
 
     return response
@@ -139,12 +149,10 @@ async def add_user_to_group(username: str = Body(...), group_name: str = Body(..
 
 # list user groups
 @admin_router.get("/UserGroups", tags=['Roles'])
-async def list_user_groups(current_user=Depends(role_required("Admin"))):
-    permit_roles = ["Admin"]
-
-    check_role_response = await check_user_role(current_user, permit_roles)
-    if 'success' not in check_role_response:
-        return check_role_response
+async def list_user_groups(current_user=Depends(get_current_user)):
+    required_permissions = ["View Roles"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     groups = await retrieve_all_groups()
     group_data = [{"group_name": group, "number_of_users": await retrieve_users_in_group(group)} for group in groups]
@@ -153,8 +161,11 @@ async def list_user_groups(current_user=Depends(role_required("Admin"))):
 
 
 @admin_router.delete("/UserGroups", tags=['Roles'])
-async def delete_user_group(group_name: str = Query(...), current_user=Depends(role_required("Admin"))):
+async def delete_user_group(group_name: str = Query(...), current_user=Depends(get_current_user)):
     # print(group_name)
+    required_permissions = ["Delete Role"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     response = cognito_client.delete_group(
         UserPoolId=Config.cognito_pool_id,
@@ -164,12 +175,10 @@ async def delete_user_group(group_name: str = Query(...), current_user=Depends(r
 
 
 @admin_router.get("/getGroupDetails", tags=['Roles'])
-async def get_group_details(group_name: str = Query(...), current_user=Depends(role_required("Admin"))):
-    permit_roles = ["Admin"]
-
-    check_role_response = await check_user_role(current_user, permit_roles)
-    if 'success' not in check_role_response:
-        return check_role_response
+async def get_group_details(group_name: str = Query(...), current_user=Depends(get_current_user)):
+    required_permissions = ["View Role"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     group_details = await retrieve_group_details(group_name)
     processed_group_details = await process_permissions(group_details)
@@ -178,12 +187,10 @@ async def get_group_details(group_name: str = Query(...), current_user=Depends(r
 
 
 @admin_router.get("/getAllUsersNames", tags=['Admin-Users'])
-async def get_user_names(current_user: Annotated[any, Depends(role_required("Admin"))]):
-    permit_roles = ["Admin"]
-
-    check_role_response = await check_user_role(current_user, permit_roles)
-    if 'success' not in check_role_response:
-        return check_role_response
+async def get_user_names(current_user: Annotated[any, Depends(get_current_user)]):
+    required_permissions = ["View Users"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     usernames = await retrieve_all_usernames()
 
@@ -192,12 +199,10 @@ async def get_user_names(current_user: Annotated[any, Depends(role_required("Adm
 
 # gt all user names, emails and their roles
 @admin_router.get("/getAllUsers", tags=['Admin-Users'])
-async def get_all_users(current_user: Annotated[any, Depends(role_required("Admin"))]):
-    permit_roles = ["Admin"]
-
-    check_role_response = await check_user_role(current_user, permit_roles)
-    if 'success' not in check_role_response:
-        return check_role_response
+async def get_all_users(current_user: Annotated[any, Depends(get_current_user)]):
+    required_permissions = ["View Users"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     usernames = await retrieve_all_usernames_2()
 
@@ -217,12 +222,10 @@ async def get_all_users(current_user: Annotated[any, Depends(role_required("Admi
 
 # list members of a group using query parameter group_name
 @admin_router.get("/getGroupMembers", tags=['Roles'])
-async def get_group_members(group_name: str = Query(...), current_user=Depends(role_required("Admin"))):
-    permit_roles = ["Admin"]
-
-    check_role_response = await check_user_role(current_user, permit_roles)
-    if 'success' not in check_role_response:
-        return check_role_response
+async def get_group_members(group_name: str = Query(...), current_user=Depends(get_current_user)):
+    required_permissions = ["View Role"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     group_members = await retrieve_group_members(group_name)
 
@@ -230,7 +233,11 @@ async def get_group_members(group_name: str = Query(...), current_user=Depends(r
 
 
 @admin_router.get('/getUserDetails', tags=['Admin-Users'])
-async def get_user_details(username: str = Query(...), current_user=Depends(role_required("Admin"))):
+async def get_user_details(username: str = Query(...), current_user=Depends(get_current_user)):
+    required_permissions = ["View User"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
+
     response = cognito_client.admin_get_user(
         UserPoolId=Config.cognito_pool_id,
         Username=username
@@ -248,12 +255,10 @@ async def get_user_details(username: str = Query(...), current_user=Depends(role
 # update the user group attributes
 @admin_router.put('/updateRole', tags=['Roles'])
 async def update_role(group_name: str = Body(...), permissions: list[groupPermissions] = Body(...),
-                      current_user=Depends(role_required("Admin"))):
-    permit_roles = ["Admin"]
-
-    check_role_response = await check_user_role(current_user, permit_roles)
-    if 'success' not in check_role_response:
-        return check_role_response
+                      current_user=Depends(get_current_user)):
+    required_permissions = ["Edit Role"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     prepared_permissions = await prepare_permissions(permissions)
     response = await update_group(group_name, prepared_permissions)
@@ -263,12 +268,10 @@ async def update_role(group_name: str = Body(...), permissions: list[groupPermis
 
 @admin_router.put("/updateUser", tags=['Admin-Users'])
 async def update_user(new_user: Annotated[UpdateUser, Body()],
-                      current_user: Annotated[any, Depends(role_required("Admin"))]):
-    permit_roles = ["Admin"]
-
-    check_role_response = await check_user_role(current_user, permit_roles)
-    if 'success' not in check_role_response:
-        return check_role_response
+                      current_user: Annotated[any, Depends(get_current_user)]):
+    required_permissions = ["Edit User"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     update_attributes_response = await update_user_attributes(new_user)
 
@@ -283,12 +286,10 @@ async def update_user(new_user: Annotated[UpdateUser, Body()],
 
 # enable user
 @admin_router.put("/enableUser", tags=['Admin-Users'])
-async def enable_user(username: str = Body(...), current_user=Depends(role_required("Admin"))):
-    permit_roles = ["Admin"]
-
-    check_role_response = await check_user_role(current_user, permit_roles)
-    if 'success' not in check_role_response:
-        return check_role_response
+async def enable_user(username: str = Body(...), current_user=Depends(get_current_user)):
+    required_permissions = ["Enable User"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     user_status = await check_user_disabled(username)
 
@@ -300,13 +301,10 @@ async def enable_user(username: str = Body(...), current_user=Depends(role_requi
 
 
 @admin_router.put("/disableUser", tags=['Admin-Users'])
-async def disable_user(username: str = Body(...), current_user=Depends(role_required("Admin"))):
-    permit_roles = ["Admin"]
-
-    check_role_response = await check_user_role(current_user, permit_roles)
-
-    if 'success' not in check_role_response:
-        return check_role_response
+async def disable_user(username: str = Body(...), current_user=Depends(get_current_user)):
+    required_permissions = ["Disable User"]
+    if 'success' not in check_permissions(current_user, required_permissions):
+        return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     response = await disable_user_in_cognito(username)
 
@@ -314,18 +312,10 @@ async def disable_user(username: str = Body(...), current_user=Depends(role_requ
 
 
 # get permissions of a user
-@admin_router.get("/getUserPermissions", tags=['Roles'])
-async def get_user_permissions(username: str = Query(...), current_user=Depends(role_required("Admin"))):
-    permit_roles = ["Admin"]
-
-    check_role_response = await check_user_role(current_user, permit_roles)
-    if 'success' not in check_role_response:
-        return check_role_response
-
+@admin_router.get("/getUserPermissions/{username}", tags=['Roles'])
+async def get_user_permissions(username: str, current_user=Depends(get_current_user)):
     user_groups = await get_user_groups(username)
-
     permissions_list = await process_group_descriptions(user_groups)
-
     permissions = await extract_permissions(permissions_list)
 
     return permissions

@@ -78,7 +78,7 @@ async def add_user_to_roles(new_user):
 async def send_password_email(new_user):
     try:
         ses_client.send_email(
-            Source='janithravisankax@gmail.com',
+            Source='icsmsco@gmail.com',
             Destination={
                 'ToAddresses': [
                     new_user.email,
@@ -368,4 +368,7 @@ async def extract_permissions(permissions_list):
         for perm in permission:
             if perm['Value'] == 'true':
                 permissions.append(perm['Name'])
+    # remove duplicates permission list
+    permissions = list(set(permissions))
+
     return permissions
