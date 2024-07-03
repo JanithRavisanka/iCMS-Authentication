@@ -1,5 +1,8 @@
 import json
 import os
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 from boto3 import client
 from dotenv import load_dotenv
@@ -12,12 +15,18 @@ aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
 aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
 aws_default_region = os.getenv('AWS_DEFAULT_REGION')
 
+from_email = os.getenv('GMAIL_USER')
+password = os.getenv('GMAIL_PASSWORD')
+
 cognito_client = client(
     'cognito-idp',
     region_name=aws_default_region,
     aws_access_key_id=aws_access_key_id,
     aws_secret_access_key=aws_secret_access_key
 )
+
+# create dynamodb class
+
 
 ses_client = client('ses', region_name=aws_default_region)
 
@@ -75,41 +84,84 @@ async def add_user_to_roles(new_user):
         return {"error": f"An error occurred while adding the user to roles: {e}"}
 
 
-async def send_password_email(new_user):
+# async def send_password_email(new_user):
+#     try:
+#         ses_client.send_email(
+#             Source='icsmsco@gmail.com',
+#             Destination={
+#                 'ToAddresses': [
+#                     new_user.email,
+#                 ],
+#             },
+#             Message={
+#                 'Subject': {
+#                     'Data': 'Your new password',
+#                 },
+#                 'Body': {
+#                     'Html': {
+#                         'Data': f"""
+#                         <html>
+#                         <body>
+#                             <h1>Welcome to iCMS</h1>
+#                             <p>Hello {new_user.username},</p>
+#                             <p>Your account has been created successfully.</p>
+#                             <p>YOur user name is: <b>{new_user.username}</b></p>
+#                             <p>Your new password is: <b>{new_user.password}</b></p>
+#                             <p>Please change your password after logging in.</p>
+#                             <p>Thank you for using iCMS!</p>
+#                         </body>
+#                         </html>
+#                         """,
+#                     },
+#                 },
+#             }
+#         )
+#         return {"success": True}
+#     except Exception as e:
+#         return {"error": f"An error occurred while sending the email: {e}"}
+
+def send_email(subject, body, to_email):
+    from_email = os.getenv('GMAIL_USER')
+    password = os.getenv('GMAIL_PASSWORD')
+
+    msg = MIMEMultipart()
+    msg['From'] = from_email
+    msg['To'] = to_email
+    msg['Subject'] = subject
+
+    msg.attach(MIMEText(body, 'html'))
+
+    smtp_server = 'smtp.gmail.com'
+    smtp_port = 587
+
     try:
-        ses_client.send_email(
-            Source='icsmsco@gmail.com',
-            Destination={
-                'ToAddresses': [
-                    new_user.email,
-                ],
-            },
-            Message={
-                'Subject': {
-                    'Data': 'Your new password',
-                },
-                'Body': {
-                    'Html': {
-                        'Data': f"""
-                        <html>
-                        <body>
-                            <h1>Welcome to iCMS</h1>
-                            <p>Hello {new_user.username},</p>
-                            <p>Your account has been created successfully.</p>
-                            <p>YOur user name is: <b>{new_user.username}</b></p>
-                            <p>Your new password is: <b>{new_user.password}</b></p>
-                            <p>Please change your password after logging in.</p>
-                            <p>Thank you for using iCMS!</p>
-                        </body>
-                        </html>
-                        """,
-                    },
-                },
-            }
-        )
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls()
+        server.login(from_email, password)
+        server.sendmail(from_email, to_email, msg.as_string())
+        server.quit()
         return {"success": True}
     except Exception as e:
-        return {"error": f"An error occurred while sending the email: {e}"}
+        return {"error": f"Failed to send email: {e}"}
+
+
+async def send_password_email(new_user):
+    subject = 'Your new password'
+    body = f"""
+    <html>
+    <body>
+        <h1>Welcome to iCMS</h1>
+        <p>Hello {new_user.username},</p>
+        <p>Your account has been created successfully.</p>
+        <p>Your username is: <b>{new_user.username}</b></p>
+        <p>Your new password is: <b>{new_user.password}</b></p>
+        <p>Please change your password after logging in.</p>
+        <p>Thank you for using iCMS!</p>
+    </body>
+    </html>
+    """
+
+    return send_email(subject, body, new_user.email)
 
 
 async def delete_user_from_cognito(username: str):
@@ -117,7 +169,8 @@ async def delete_user_from_cognito(username: str):
         UserPoolId=Config.cognito_pool_id,
         Username=username
     )
-    return response
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return {"success": True}
 
 
 # get all users
@@ -151,7 +204,8 @@ async def create_group(user_group, permissions):
         UserPoolId=Config.cognito_pool_id,
         Description=f"{permissions}"
     )
-    return response
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return {"success": True}
 
 
 async def add_users_to_group(user_group):
@@ -172,7 +226,8 @@ async def add_user_to_cognito_group(username: str, group_name: str):
         Username=username,
         GroupName=group_name,
     )
-    return response
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return {"success": True}
 
 
 # groups details
@@ -273,7 +328,8 @@ async def update_group(group_name, permissions):
         GroupName=group_name,
         Description=permissions
     )
-    return response
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return {"success": True}
 
 
 # update user
@@ -296,7 +352,8 @@ async def update_user_attributes(new_user):
             }
         ]
     )
-    return response
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return {"success": True}
 
 
 async def get_user_groups(username):
@@ -315,7 +372,8 @@ async def remove_user_from_all_groups(username, groups):
             Username=username,
             GroupName=group['GroupName']
         )
-    return response
+
+    return {"success": True}
 
 
 async def add_user_to_new_groups(username, roles):
@@ -326,7 +384,8 @@ async def add_user_to_new_groups(username, roles):
             Username=username,
             GroupName=role
         )
-    return response
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return {"success": True}
 
 
 # disable user
@@ -335,7 +394,8 @@ async def disable_user_in_cognito(username):
         UserPoolId=Config.cognito_pool_id,
         Username=username
     )
-    return response
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return {"success": True}
 
 
 # enable user
@@ -352,7 +412,8 @@ async def enable_user_in_cognito(username):
         UserPoolId=Config.cognito_pool_id,
         Username=username
     )
-    return response
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return {"success": True}
 
 
 # get user permissions

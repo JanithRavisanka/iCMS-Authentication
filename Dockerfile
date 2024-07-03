@@ -12,6 +12,9 @@ ENV AWS_SECRET_ACCESS_KEY = ${AWS_SECRET_ACCESS_KEY}
 ENV AWS_ACCESS_KEY_ID = ${AWS_ACCESS_KEY_ID}
 ENV AWS_REGION = ${AWS_REGION}
 
+ENV GMAIL_USER = 'janithravisankax@gmail.com'
+ENV GMAIL_PASSWORD = 'smedjvwdtursbksn'
+
 COPY ./requirements.txt /code/requirements.txt
 
 RUN pip --timeout=1000 install --no-cache-dir --upgrade -r /code/requirements.txt
