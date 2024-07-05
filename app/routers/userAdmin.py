@@ -550,9 +550,6 @@ async def get_user_permissions(username: str, current_user=Depends(get_current_u
         user_groups = await get_user_groups(username)
         permissions_list = await process_group_descriptions(user_groups)
         permissions = await extract_permissions(permissions_list)
-
-        await log_to_dynamodb(current_user.username, f"{action}: {username}, Success", True)
         return permissions
     except Exception as e:
-        await log_to_dynamodb(current_user.username, f"{action}: {username}, Failed due to {str(e)}", False)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
