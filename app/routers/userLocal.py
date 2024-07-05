@@ -141,13 +141,17 @@ async def upload_profile_image(file: UploadFile = File(...), user=Depends(get_cu
 
 @user_router.get("/getUserProfileData")
 async def get_user_profile_data(user=Depends(get_current_user), response=Response):
-    data = get_cognito_user_attributes(user.username)
+    attributes_list = get_cognito_user_attributes(user.username)
+    # Convert list of attributes to a dictionary
+    data = {attr['Name']: attr['Value'] for attr in attributes_list}
+    # Add the username to the dictionary
+    data['username'] = user.username
+
     headers = {
         "cache-control": "no-cache",
         "content-type": "application/json"
     }
     return JSONResponse(content=data, headers=headers)
-
 
 # Helper function to set new password using Cognito client.change_password
 def set_new_password(username: str, previous_password: str, proposed_password: str, access_token: str):
