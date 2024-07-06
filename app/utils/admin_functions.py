@@ -45,7 +45,7 @@ async def sign_up_user(new_user):
                 {
                     'Name': 'custom:phone_number',
                     'Value': new_user.phone_number
-                }
+                },
             ]
         )
         return {"success": True, "response": response}
@@ -281,7 +281,49 @@ async def retrieve_all_usernames_2():
     response = cognito_client.list_users(
         UserPoolId=Config.cognito_pool_id
     )
+    print(response['Users'])
     return [user['Username'] for user in response['Users']]
+
+
+async def retrieve_all_data():
+    users = cognito_client.list_users(
+        UserPoolId=Config.cognito_pool_id
+    )
+    # list all groups
+    groups = cognito_client.list_groups(
+        UserPoolId=Config.cognito_pool_id
+    )
+
+    # list all users in a group {group:, users:[]}
+    group_data = []
+    for group in groups['Groups']:
+        response = cognito_client.list_users_in_group(
+            UserPoolId=Config.cognito_pool_id,
+            GroupName=group['GroupName']
+        )
+        group_data.append({
+            'group': group['GroupName'],
+            'users': [user['Username'] for user in response['Users']]
+        })
+    # for each user, filter groups
+    for user in users['Users']:
+        user['Groups'] = []
+        for group in group_data:
+            if user['Username'] in group['users']:
+                # apped group to user in users['Users']
+                user['Groups'].append(group['group'])
+
+    response = [
+        {
+            'username': user['Username'],
+            'email': next((attr['Value'] for attr in user['Attributes'] if attr['Name'] == 'email'), None),
+            'status': user['Enabled'],
+            'groups': user['Groups']
+
+        } for user in users['Users']
+    ]
+
+    return response
 
 
 async def retrieve_user_details(username):

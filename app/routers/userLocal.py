@@ -45,10 +45,10 @@ async def log_to_dynamodb(username: str, action: str, is_success: bool):
             table.put_item(
                 Item={
                     'username': username,
-                    'creation': {
-                        'created_by': username,
-                        'created_time': current_time
-                    },
+                    # 'creation': {
+                    #     'created_by': username,
+                    #     'created_time': current_time
+                    # },
                     'events': [{
                         'action': action,
                         'is_success': is_success,
@@ -153,6 +153,7 @@ async def get_user_profile_data(user=Depends(get_current_user), response=Respons
     }
     return JSONResponse(content=data, headers=headers)
 
+
 # Helper function to set new password using Cognito client.change_password
 def set_new_password(username: str, previous_password: str, proposed_password: str, access_token: str):
     response = cognito_client.change_password(
@@ -174,7 +175,7 @@ async def change_password(change_password: ChangePassword, user=Depends(get_curr
         return {"message": "Password changed successfully"}
     except Exception as e:
         log_response = await log_to_dynamodb(user.username, 'Change Password: Own password', False)
-        return {"message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @user_router.post("/editUserProfile")

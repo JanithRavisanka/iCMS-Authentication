@@ -12,10 +12,10 @@ from app.models.newUser import NewUser
 from app.utils.admin_functions import sign_up_user, verify_user_email, add_user_to_roles, send_password_email, \
     delete_user_from_cognito, retrieve_all_users, create_permissions_list, create_group, \
     add_users_to_group, add_user_to_cognito_group, retrieve_all_groups, retrieve_users_in_group, retrieve_group_details, \
-    process_permissions, retrieve_all_usernames, retrieve_user_details, retrieve_user_groups, retrieve_all_usernames_2, \
-    retrieve_group_members, prepare_permissions, update_group, update_user_attributes, get_user_groups, \
+    process_permissions, retrieve_all_usernames, retrieve_group_members, prepare_permissions, update_group, \
+    update_user_attributes, get_user_groups, \
     remove_user_from_all_groups, add_user_to_new_groups, disable_user_in_cognito, process_group_descriptions, \
-    extract_permissions, check_user_disabled, enable_user_in_cognito
+    extract_permissions, check_user_disabled, enable_user_in_cognito, retrieve_all_data
 from app.utils.auth import get_current_user
 
 load_dotenv()
@@ -56,7 +56,60 @@ class UserLogs(BaseModel):
     events: List[LogEntry]
 
 
-async def log_to_dynamodb(username: str, action: str, is_success: bool):
+# async def log_to_dynamodb(username: str, action: str, is_success: bool):
+#     current_time = datetime.utcnow().isoformat()
+
+#     # Check if the user already exists in the table
+#     try:
+#         response = table.get_item(Key={'username': username})
+#     except Exception as e:
+#         print(f"Error retrieving item: {e}")
+#         raise HTTPException(status_code=500, detail="Error retrieving item from DynamoDB")
+
+#     if 'Item' not in response:
+#         # User does not exist, create a new item
+#         try:
+#             table.put_item(
+#                 Item={
+#                     'username': username,
+#                     # 'creation': {
+#                     #     'created_by': username,
+#                     #     'created_time': current_time
+#                     # },
+#                     'events': [{
+#                         'action': action,
+#                         'is_success': is_success,
+#                         'time': current_time
+#                     }]
+#                 }
+#             )
+#         except Exception as e:
+#             print(f"Error creating item: {e}")
+#             raise HTTPException(status_code=500, detail="Error creating item in DynamoDB")
+#     else:
+#         # User exists, update the events list
+#         try:
+#             response = table.update_item(
+#                 Key={'username': username},
+#                 UpdateExpression="SET creation.created_by = :cb, creation.created_time = :ct, events = list_append(events, :new_event)",
+#                 ExpressionAttributeValues={
+#                     ':cb': username,
+#                     ':ct': current_time,
+#                     ':new_event': [{
+#                         'action': action,
+#                         'is_success': is_success,
+#                         'time': current_time
+#                     }]
+#                 },
+#                 ReturnValues="UPDATED_NEW"
+#             )
+#         except Exception as e:
+#             print(f"Error updating item: {e}")
+#             raise HTTPException(status_code=500, detail="Error updating item in DynamoDB")
+
+#     return response
+
+async def log_to_dynamodb(username: str, action: str, is_success: bool, newuser: str = None):
     current_time = datetime.utcnow().isoformat()
 
     # Check if the user already exists in the table
@@ -65,17 +118,12 @@ async def log_to_dynamodb(username: str, action: str, is_success: bool):
     except Exception as e:
         print(f"Error retrieving item: {e}")
         raise HTTPException(status_code=500, detail="Error retrieving item from DynamoDB")
-
     if 'Item' not in response:
         # User does not exist, create a new item
         try:
             table.put_item(
                 Item={
                     'username': username,
-                    'creation': {
-                        'created_by': username,
-                        'created_time': current_time
-                    },
                     'events': [{
                         'action': action,
                         'is_success': is_success,
@@ -86,15 +134,30 @@ async def log_to_dynamodb(username: str, action: str, is_success: bool):
         except Exception as e:
             print(f"Error creating item: {e}")
             raise HTTPException(status_code=500, detail="Error creating item in DynamoDB")
+
+    elif newuser:
+        # User exists, update the events list
+        try:
+            table.put_item(
+                Item={
+                    'username': newuser,
+                    'creation': {
+                        'created_time': current_time,
+                        'created_by': username
+                    },
+                    'events': []
+                }
+            )
+        except Exception as e:
+            print(f"Error creating item: {e}")
+            raise HTTPException(status_code=500, detail="Error creating item in DynamoDB")
     else:
         # User exists, update the events list
         try:
             response = table.update_item(
                 Key={'username': username},
-                UpdateExpression="SET creation.created_by = :cb, creation.created_time = :ct, events = list_append(events, :new_event)",
+                UpdateExpression="SET events = list_append(events, :new_event)",
                 ExpressionAttributeValues={
-                    ':cb': username,
-                    ':ct': current_time,
                     ':new_event': [{
                         'action': action,
                         'is_success': is_success,
@@ -208,7 +271,8 @@ async def create_new_user(new_user: Annotated[NewUser, Body()],
     if 'success' not in response:
         return response
 
-    log_response = await log_to_dynamodb(current_user.username, f"{required_permissions[0]}: {new_user.username}", True)
+    log_response = await log_to_dynamodb(current_user.username, f"{required_permissions[0]}: {new_user.username}", True,
+                                         new_user.username)
 
     return {"message": "User created successfully"}
 
@@ -379,21 +443,9 @@ async def get_all_users(current_user: Annotated[any, Depends(get_current_user)])
         return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     try:
-        usernames = await retrieve_all_usernames_2()
-
-        users = []
-        for username in usernames:
-            user_email, status = await retrieve_user_details(username)
-            groups = await retrieve_user_groups(username)
-            users.append({
-                "username": username,
-                "email": user_email,
-                "groups": groups,
-                "status": status
-            })
-
+        userdata = await retrieve_all_data()
         await log_to_dynamodb(current_user.username, required_permissions[0] + ": Success", True)
-        return users
+        return userdata
     except Exception as e:
         await log_to_dynamodb(current_user.username, f"required_permissions[0]: Failed due to {str(e)}", False)
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -553,3 +605,35 @@ async def get_user_permissions(username: str, current_user=Depends(get_current_u
         return permissions
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+# get auth events for a user from cognito using client.admin_list_user_auth_events
+@admin_router.get("/userAuthLogs/{username}", tags=['Admin-Logs'])
+def get_auth_events(username):
+    # Initialize the Cognito Identity Provider client
+    auth_events = []
+    try:
+        # Retrieve authentication events for the specified user
+        response = cognito_client.admin_list_user_auth_events(
+            UserPoolId=Config.cognito_pool_id,
+            Username=username,
+            MaxResults=20  # Adjust as needed
+        )
+        # return response['AuthEvents']
+        for auth_event in response['AuthEvents']:
+            auth_events.append(
+                {
+                    "action": auth_event['EventType'],
+                    "is_success": True if (auth_event['EventResponse'] == "Pass" or auth_event[
+                        'EventType'] == "SignUp") else False,
+                    "time": auth_event["CreationDate"],
+                    "event_data": auth_event["EventContextData"]
+
+                }
+            )
+
+        return auth_events
+
+    except Exception as e:
+        print(f"Error retrieving auth events: {e}")
+        return []
