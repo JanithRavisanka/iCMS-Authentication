@@ -56,59 +56,6 @@ class UserLogs(BaseModel):
     events: List[LogEntry]
 
 
-# async def log_to_dynamodb(username: str, action: str, is_success: bool):
-#     current_time = datetime.utcnow().isoformat()
-
-#     # Check if the user already exists in the table
-#     try:
-#         response = table.get_item(Key={'username': username})
-#     except Exception as e:
-#         print(f"Error retrieving item: {e}")
-#         raise HTTPException(status_code=500, detail="Error retrieving item from DynamoDB")
-
-#     if 'Item' not in response:
-#         # User does not exist, create a new item
-#         try:
-#             table.put_item(
-#                 Item={
-#                     'username': username,
-#                     # 'creation': {
-#                     #     'created_by': username,
-#                     #     'created_time': current_time
-#                     # },
-#                     'events': [{
-#                         'action': action,
-#                         'is_success': is_success,
-#                         'time': current_time
-#                     }]
-#                 }
-#             )
-#         except Exception as e:
-#             print(f"Error creating item: {e}")
-#             raise HTTPException(status_code=500, detail="Error creating item in DynamoDB")
-#     else:
-#         # User exists, update the events list
-#         try:
-#             response = table.update_item(
-#                 Key={'username': username},
-#                 UpdateExpression="SET creation.created_by = :cb, creation.created_time = :ct, events = list_append(events, :new_event)",
-#                 ExpressionAttributeValues={
-#                     ':cb': username,
-#                     ':ct': current_time,
-#                     ':new_event': [{
-#                         'action': action,
-#                         'is_success': is_success,
-#                         'time': current_time
-#                     }]
-#                 },
-#                 ReturnValues="UPDATED_NEW"
-#             )
-#         except Exception as e:
-#             print(f"Error updating item: {e}")
-#             raise HTTPException(status_code=500, detail="Error updating item in DynamoDB")
-
-#     return response
-
 async def log_to_dynamodb(username: str, action: str, is_success: bool, newuser: str = None):
     current_time = datetime.utcnow().isoformat()
 
@@ -124,18 +71,23 @@ async def log_to_dynamodb(username: str, action: str, is_success: bool, newuser:
             table.put_item(
                 Item={
                     'username': username,
+                    'creation': {
+                        'created_time': current_time,
+                        'created_by': "janithravisankax@gmail.com"
+                    },
                     'events': [{
                         'action': action,
                         'is_success': is_success,
                         'time': current_time
-                    }]
+                    }
+                    ]
                 }
             )
         except Exception as e:
             print(f"Error creating item: {e}")
             raise HTTPException(status_code=500, detail="Error creating item in DynamoDB")
 
-    elif newuser:
+    elif newuser is not None:
         # User exists, update the events list
         try:
             table.put_item(
