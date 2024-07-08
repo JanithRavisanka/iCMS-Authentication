@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from typing import Annotated, Optional, List
 
+import pytz
 from boto3 import client, resource
 from dotenv import load_dotenv
 from fastapi import APIRouter, Body, HTTPException, Depends, Query
@@ -57,7 +58,8 @@ class UserLogs(BaseModel):
 
 
 async def log_to_dynamodb(username: str, action: str, is_success: bool, newuser: str = None):
-    current_time = datetime.utcnow().isoformat()
+    current_time = datetime.now(pytz.timezone("Asia/Colombo")).isoformat()
+    print(current_time)
 
     # Check if the user already exists in the table
     try:
