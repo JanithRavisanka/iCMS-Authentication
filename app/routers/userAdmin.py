@@ -57,7 +57,12 @@ class UserLogs(BaseModel):
     events: List[LogEntry]
 
 
-async def log_to_dynamodb(username: str, action: str, is_success: bool, newuser: str = None):
+async def log_to_dynamodb(
+        username: str,
+        action: str,
+        is_success: bool,
+        newuser: str = None
+):
     current_time = datetime.now(pytz.timezone("Asia/Colombo")).isoformat()
     print(current_time)
 
@@ -67,6 +72,23 @@ async def log_to_dynamodb(username: str, action: str, is_success: bool, newuser:
     except Exception as e:
         print(f"Error retrieving item: {e}")
         raise HTTPException(status_code=500, detail="Error retrieving item from DynamoDB")
+    if newuser is not None:
+        # User exists, update the events list
+        try:
+            table.put_item(
+                Item={
+                    'username': newuser,
+                    'creation': {
+                        'created_time': current_time,
+                        'created_by': username
+                    },
+                    'events': []
+                }
+            )
+        except Exception as e:
+            print(f"Error creating item: {e}")
+            raise HTTPException(status_code=500, detail="Error creating item in DynamoDB")
+
     if 'Item' not in response:
         # User does not exist, create a new item
         try:
@@ -89,22 +111,7 @@ async def log_to_dynamodb(username: str, action: str, is_success: bool, newuser:
             print(f"Error creating item: {e}")
             raise HTTPException(status_code=500, detail="Error creating item in DynamoDB")
 
-    elif newuser is not None:
-        # User exists, update the events list
-        try:
-            table.put_item(
-                Item={
-                    'username': newuser,
-                    'creation': {
-                        'created_time': current_time,
-                        'created_by': username
-                    },
-                    'events': []
-                }
-            )
-        except Exception as e:
-            print(f"Error creating item: {e}")
-            raise HTTPException(status_code=500, detail="Error creating item in DynamoDB")
+
     else:
         # User exists, update the events list
         try:
@@ -221,12 +228,16 @@ async def create_new_user(new_user: Annotated[NewUser, Body()],
     if 'success' not in response:
         return response
 
+    await log_to_dynamodb(
+        current_user.username,
+        f"{required_permissions[0]}: {new_user.username}",
+        True,
+        new_user.username
+    )
+
     response = await send_password_email(new_user)
     if 'success' not in response:
         return response
-
-    log_response = await log_to_dynamodb(current_user.username, f"{required_permissions[0]}: {new_user.username}", True,
-                                         new_user.username)
 
     return {"message": "User created successfully"}
 
