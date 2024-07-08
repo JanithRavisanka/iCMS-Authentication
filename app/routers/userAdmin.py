@@ -161,8 +161,8 @@ def check_permissions(current_user, required_permissions):
 @admin_router.get("/userLogs", response_model=List[LogEntry], tags=['Admin-Logs'])
 async def get_user_logs(username: str, start_time: str, end_time: str):
     try:
-        start_time_dt = datetime.fromisoformat(start_time)
-        end_time_dt = datetime.fromisoformat(end_time)
+        start_time_dt = datetime.fromisoformat(start_time).replace(tzinfo=pytz.timezone("Asia/Colombo"))
+        end_time_dt = datetime.fromisoformat(end_time).replace(tzinfo=pytz.timezone("Asia/Colombo"))
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid time format. Use ISO format.")
 
@@ -182,7 +182,7 @@ async def get_user_logs(username: str, start_time: str, end_time: str):
 
     if 'events' in user_item:
         for event in user_item['events']:
-            event_time = datetime.fromisoformat(event['time'])
+            event_time = datetime.fromisoformat(event['time']).replace(tzinfo=pytz.timezone("Asia/Colombo"))
             if start_time_dt <= event_time <= end_time_dt:
                 filtered_events.append({
                     "action": event['action'],
