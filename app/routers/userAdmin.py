@@ -7,8 +7,10 @@ from boto3 import client, resource
 from dotenv import load_dotenv
 from fastapi import APIRouter, Body, HTTPException, Depends, Query
 from pydantic import BaseModel
+from pymongo import MongoClient
 
 from app.config.config import Config
+from app.models.Notifications import SubscribeUser
 from app.models.newUser import NewUser
 from app.utils.admin_functions import sign_up_user, verify_user_email, add_user_to_roles, send_password_email, \
     delete_user_from_cognito, retrieve_all_users, create_permissions_list, create_group, \
@@ -24,6 +26,12 @@ load_dotenv()
 aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
 aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
 aws_default_region = os.getenv('AWS_DEFAULT_REGION')
+
+# MongoDB connection URI
+mongodb_uri = os.getenv('MONGODB_URI')
+mongodb_client = MongoClient(mongodb_uri)
+database = 'icsms-config'
+subscribed_user_collection = 'subscribed_users'
 
 # print(aws_access_key_id)
 # print(aws_secret_access_key)
@@ -574,7 +582,7 @@ async def get_user_permissions(username: str, current_user=Depends(get_current_u
 
 # get auth events for a user from cognito using client.admin_list_user_auth_events
 @admin_router.get("/userAuthLogs/{username}", tags=['Admin-Logs'])
-def get_auth_events(username):
+async def get_auth_events(username):
     # Initialize the Cognito Identity Provider client
     auth_events = []
     try:
@@ -602,3 +610,164 @@ def get_auth_events(username):
     except Exception as e:
         print(f"Error retrieving auth events: {e}")
         return []
+
+
+@admin_router.post("/set_subscribed_users", tags=['config'])
+async def subscribe_report(users: list[SubscribeUser] = Body(...), current_user=Depends(get_current_user)):
+    action_required = "Edit Config"
+    db = mongodb_client[database]
+    collection = db[subscribed_user_collection]
+    # clear the collection
+    collection.delete_many({})
+    for user in users:
+        if collection.find_one(
+                {
+                    'username': user.username,
+                    'type': user.type
+                }
+        ):
+            continue
+        else:
+            collection.insert_one(
+                {
+                    'username': user.username,
+                    'type': user.type
+                }
+            )
+    await log_to_dynamodb(current_user.username, action_required, True)
+    return {"message": "Subscribed users updated successfully"}
+
+
+@admin_router.get("/get_subscribed_users", tags=['config'])
+async def get_subscribed_users(current_user=Depends(get_current_user)):
+    action_required = "View Config"
+    db = mongodb_client[database]
+    collection = db[subscribed_user_collection]
+    await log_to_dynamodb(current_user.username, action_required, True)
+
+    return [{'username': user['username'], 'type': user['type']} for user in collection.find()]
+
+
+@admin_router.get("/get_weights", tags=['config'])
+async def get_weights(current_user=Depends(get_current_user)):
+    action_required = "View Config"
+    db = mongodb_client[database]
+    collection = db['security_config']
+    try:
+        weights = [weight["value"] for weight in collection.find({'name': 'weights'})][0]
+        # need {name: , value: } format
+        await log_to_dynamodb(current_user.username, action_required, True)
+        return [{'name': key, 'value': value} for key, value in weights.items()]
+    except Exception as e:
+        return []
+
+
+@admin_router.post("/set_weights", tags=['config'])
+async def set_weights(weights: list[dict], current_user=Depends(get_current_user)):
+    action_required = "Edit Config"
+    db = mongodb_client[database]
+    collection = db['security_config']
+    collection.delete_many({'name': 'weights'})
+    # need {name:value } format
+    weights = {weight['name']: weight['value'] for weight in weights}
+    collection.insert_one(
+        {
+            'name': 'weights',
+            'value': weights
+        }
+    )
+    await log_to_dynamodb(current_user.username, action_required, True)
+    return {"message": "Weights updated successfully"}
+
+
+@admin_router.get('/get_average_actions', tags=['config'])
+async def get_average_actions(current_user=Depends(get_current_user)):
+    action_required = "View Config"
+    db = mongodb_client[database]
+    collection = db['security_config']
+    try:
+        actions = [average["value"] for average in collection.find({'name': 'average_actions'})][0]
+        await log_to_dynamodb(current_user.username, action_required, True)
+        return [{'name': key, 'value': value} for key, value in actions.items()]
+    except Exception as e:
+        await log_to_dynamodb(current_user.username, action_required, False)
+        return []
+
+
+@admin_router.post('/set_average_actions', tags=['config'])
+async def set_average_actions(averages: list[dict], current_user=Depends(get_current_user)):
+    action_required = "Edit Config"
+    db = mongodb_client[database]
+    collection = db['security_config']
+    collection.delete_many({'name': 'average_actions'})
+    averages = {average['name']: average['value'] for average in averages}
+    collection.insert_one(
+        {
+            'name': 'average_actions',
+            'value': averages
+        }
+    )
+    await log_to_dynamodb(current_user.username, action_required, True)
+    return {"message": "Averages updated successfully"}
+
+
+@admin_router.get('/get_thresholds', tags=['config'])
+async def get_thresholds(current_user=Depends(get_current_user)):
+    action_required = "View Config"
+    db = mongodb_client[database]
+    collection = db['security_config']
+    try:
+        await log_to_dynamodb(current_user.username, action_required, True)
+        return [{'name': threshold['name'], 'value': threshold['value']} for threshold in
+                collection.find({'name': 'thresholds'})]
+    except Exception as e:
+        await log_to_dynamodb(current_user.username, action_required, False)
+        return []
+
+
+@admin_router.post('/set_thresholds', tags=['config'])
+async def set_thresholds(thresholds: list[dict], current_user=Depends(get_current_user)):
+    action_required = "Edit Config"
+    db = mongodb_client[database]
+    collection = db['security_config']
+    collection.delete_many({'name': 'thresholds'})
+    for threshold in thresholds:
+        collection.insert_one(
+            {
+                'name': 'thresholds',
+                'value': threshold['value']
+            }
+        )
+    await log_to_dynamodb(current_user.username, action_required, True)
+    return {"message": "Thresholds updated successfully"}
+
+
+@admin_router.get("/get_rules", tags=['config'])
+async def get_rules(current_user=Depends(get_current_user)):
+    action_required = "View Config"
+    db = mongodb_client[database]
+    collection = db['security_config']
+    try:
+        rules = [rule["value"] for rule in collection.find({'name': 'rules'})][0]
+        await log_to_dynamodb(current_user.username, action_required, True)
+        return [{'name': key, 'value': value} for key, value in rules.items()]
+    except Exception as e:
+        await log_to_dynamodb(current_user.username, action_required, False)
+        return []
+
+
+@admin_router.post('/set_rules', tags=['config'])
+async def set_rules(rules: list[dict], current_user=Depends(get_current_user)):
+    action_required = "Edit Config"
+    db = mongodb_client[database]
+    collection = db['security_config']
+    collection.delete_many({'name': 'rules'})
+    rules = {rule['name']: rule['value'] for rule in rules}
+    collection.insert_one(
+        {
+            'name': 'rules',
+            'value': rules
+        }
+    )
+    await log_to_dynamodb(current_user.username, action_required, True)
+    return {"message": "Rules updated successfully"}
