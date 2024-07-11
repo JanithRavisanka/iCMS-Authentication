@@ -15,6 +15,8 @@ ENV AWS_REGION = ${AWS_REGION}
 ENV GMAIL_USER = 'janithravisankax@gmail.com'
 ENV GMAIL_PASSWORD = 'smedjvwdtursbksn'
 
+ENV MONGODB_URI = ${MONGODB_URI}
+
 COPY ./requirements.txt /code/requirements.txt
 
 RUN pip --timeout=1000 install --no-cache-dir --upgrade -r /code/requirements.txt
