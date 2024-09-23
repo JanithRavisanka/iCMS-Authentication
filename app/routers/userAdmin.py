@@ -12,6 +12,9 @@ from pymongo import MongoClient
 from app.config.config import Config
 from app.models.Notifications import SubscribeUser
 from app.models.newUser import NewUser
+from app.models.group import groupPermissions, userGroup
+from app.models.adminUser import UpdateUser
+from app.models.userLog import LogEntry
 from app.utils.admin_functions import sign_up_user, verify_user_email, add_user_to_roles, send_password_email, \
     delete_user_from_cognito, retrieve_all_users, create_permissions_list, create_group, \
     add_users_to_group, add_user_to_cognito_group, retrieve_all_groups, retrieve_users_in_group, retrieve_group_details, \
@@ -22,7 +25,6 @@ from app.utils.admin_functions import sign_up_user, verify_user_email, add_user_
 from app.utils.auth import get_current_user
 
 load_dotenv()
-
 aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
 aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
 aws_default_region = os.getenv('AWS_DEFAULT_REGION')
@@ -32,9 +34,6 @@ mongodb_uri = os.getenv('MONGODB_URI')
 mongodb_client = MongoClient(mongodb_uri)
 database = 'icsms-config'
 subscribed_user_collection = 'subscribed_users'
-
-# print(aws_access_key_id)
-# print(aws_secret_access_key)
 
 admin_router = APIRouter()
 cognito_client = client(
@@ -53,16 +52,37 @@ dynamodb = resource(
 table = dynamodb.Table('icsms-user-activity-logs')
 
 
-class LogEntry(BaseModel):
-    action: str
-    is_success: bool
-    time: str
+# class LogEntry(BaseModel):
+#     action: str
+#     is_success: bool
+#     time: str
 
 
-class UserLogs(BaseModel):
-    username: str
-    creation: dict
-    events: List[LogEntry]
+# class UserLogs(BaseModel):
+#     username: str
+#     creation: dict
+#     events: List[LogEntry]
+
+# class groupPermissions(BaseModel):
+#     name: str
+#     value: bool
+
+
+# class User(BaseModel):
+#     user_name: str
+#
+#
+# class userGroup(BaseModel):
+#     group_name: str
+#     permissions: list[groupPermissions]
+#     users: Optional[list[User]] = None
+
+
+# class UpdateUser(BaseModel):
+#     username: str
+#     email: str
+#     phone_number: str
+#     roles: list[str]
 
 
 async def log_to_dynamodb(
@@ -145,26 +165,7 @@ async def log_to_dynamodb(
 ses_client = client('ses', region_name=aws_default_region)
 
 
-class groupPermissions(BaseModel):
-    name: str
-    value: bool
 
-
-class User(BaseModel):
-    user_name: str
-
-
-class userGroup(BaseModel):
-    group_name: str
-    permissions: list[groupPermissions]
-    users: Optional[list[User]] = None
-
-
-class UpdateUser(BaseModel):
-    username: str
-    email: str
-    phone_number: str
-    roles: list[str]
 
 
 def check_permissions(current_user, required_permissions):
@@ -604,7 +605,6 @@ async def get_auth_events(username):
 
                 }
             )
-
         return auth_events
 
     except Exception as e:
