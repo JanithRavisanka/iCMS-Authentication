@@ -9,7 +9,7 @@ from fastapi import APIRouter, Body, HTTPException, Depends, Query
 from pydantic import BaseModel
 from pymongo import MongoClient
 
-from app.config.config import Config
+# from app.config.config import Config
 from app.models.Notifications import SubscribeUser
 from app.models.newUser import NewUser
 from app.models.group import groupPermissions, userGroup
@@ -28,6 +28,11 @@ load_dotenv()
 aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
 aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
 aws_default_region = os.getenv('AWS_DEFAULT_REGION')
+
+cognito_pool_id = os.getenv('AWS_COGNITO_USER_POOL_ID')
+cognito_app_client_id = os.getenv('AWS_COGNITO_CLIENT_ID')
+
+dynamodb_user_logs = os.getenv('DYNAMODB_USER_LOGS_TABLE')
 
 # MongoDB connection URI
 mongodb_uri = os.getenv('MONGODB_URI')
@@ -49,41 +54,7 @@ dynamodb = resource(
     aws_access_key_id=aws_access_key_id,
     aws_secret_access_key=aws_secret_access_key
 )
-table = dynamodb.Table('icsms-user-activity-logs')
-
-
-# class LogEntry(BaseModel):
-#     action: str
-#     is_success: bool
-#     time: str
-
-
-# class UserLogs(BaseModel):
-#     username: str
-#     creation: dict
-#     events: List[LogEntry]
-
-# class groupPermissions(BaseModel):
-#     name: str
-#     value: bool
-
-
-# class User(BaseModel):
-#     user_name: str
-#
-#
-# class userGroup(BaseModel):
-#     group_name: str
-#     permissions: list[groupPermissions]
-#     users: Optional[list[User]] = None
-
-
-# class UpdateUser(BaseModel):
-#     username: str
-#     email: str
-#     phone_number: str
-#     roles: list[str]
-
+table = dynamodb.Table(dynamodb_user_logs)
 
 async def log_to_dynamodb(
         username: str,
@@ -92,7 +63,7 @@ async def log_to_dynamodb(
         newuser: str = None
 ):
     current_time = datetime.now(pytz.timezone("Asia/Colombo")).isoformat()
-    print(current_time)
+    # print(current_time)
 
     # Check if the user already exists in the table
     try:
@@ -165,9 +136,6 @@ async def log_to_dynamodb(
 ses_client = client('ses', region_name=aws_default_region)
 
 
-
-
-
 def check_permissions(current_user, required_permissions):
     if not (set(required_permissions) & set(current_user.permissions)):
         return {"message": "You do not have access to this resource"}
@@ -221,18 +189,20 @@ async def create_new_user(new_user: Annotated[NewUser, Body()],
         return HTTPException(status_code=403, detail="You do not have access to this resource")
 
     response = await sign_up_user(new_user)
+    print(response)
     if 'success' not in response:
         return response
 
     response = await verify_user_email(new_user)
+    print(response)
     if 'success' not in response:
         return response
 
-    cognito_client.admin_confirm_sign_up(
-        UserPoolId=Config.cognito_pool_id,
+    response = cognito_client.admin_confirm_sign_up(
+        UserPoolId=cognito_pool_id,
         Username=new_user.username
     )
-
+    print(response)
     response = await add_user_to_roles(new_user)
     if 'success' not in response:
         return response
@@ -343,13 +313,13 @@ async def list_user_groups(current_user=Depends(get_current_user)):
     try:
         required_permissions = ["View Roles"]
         if 'success' not in check_permissions(current_user, required_permissions):
-            await log_to_dynamodb(current_user.username, action + ": Not authorized", False)
+            # await log_to_dynamodb(current_user.username, action + ": Not authorized", False)
             return HTTPException(status_code=403, detail="You do not have access to this resource")
 
         groups = await retrieve_all_groups()
         group_data = [{"group_name": group, "number_of_users": await retrieve_users_in_group(group)} for group in
                       groups]
-        await log_to_dynamodb(current_user.username, action + ": Success", True)
+        # await log_to_dynamodb(current_user.username, action + ": Success", True)
         return group_data
     except Exception as e:
         await log_to_dynamodb(current_user.username, f"{action}: Failed due to {str(e)}", False)
@@ -365,7 +335,7 @@ async def delete_user_group(group_name: str = Query(...), current_user=Depends(g
 
     try:
         response = cognito_client.delete_group(
-            UserPoolId=Config.cognito_pool_id,
+            UserPoolId=cognito_pool_id,
             GroupName=group_name
         )
         await log_to_dynamodb(current_user.username, f"{required_permissions[0]}: {group_name}", True)
@@ -452,14 +422,14 @@ async def get_user_details(username: str = Query(...), current_user=Depends(get_
 
     try:
         response = cognito_client.admin_get_user(
-            UserPoolId=Config.cognito_pool_id,
+            UserPoolId=cognito_pool_id,
             Username=username
         )
 
         # get user groups and add it to the response
         user_groups = cognito_client.admin_list_groups_for_user(
             Username=username,
-            UserPoolId=Config.cognito_pool_id
+            UserPoolId=cognito_pool_id
         )
         response['roles'] = [{'group_name': group['GroupName'], 'number_of_users': 0} for group in
                              user_groups['Groups']]
@@ -589,7 +559,7 @@ async def get_auth_events(username):
     try:
         # Retrieve authentication events for the specified user
         response = cognito_client.admin_list_user_auth_events(
-            UserPoolId=Config.cognito_pool_id,
+            UserPoolId=cognito_pool_id,
             Username=username,
             MaxResults=20  # Adjust as needed
         )

@@ -7,13 +7,16 @@ from email.mime.text import MIMEText
 from boto3 import client
 from dotenv import load_dotenv
 
-from app.config.config import Config
+# from app.config import Config
 
 load_dotenv()
 
 aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
 aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
 aws_default_region = os.getenv('AWS_DEFAULT_REGION')
+cognito_pool_id = os.getenv('AWS_COGNITO_USER_POOL_ID')
+cognito_app_client_id = os.getenv('AWS_COGNITO_CLIENT_ID')
+s3_bucket_name = os.getenv('AWS_S3_BUCKET')
 
 from_email = os.getenv('GMAIL_USER')
 password = os.getenv('GMAIL_PASSWORD')
@@ -34,7 +37,7 @@ ses_client = client('ses', region_name=aws_default_region)
 async def sign_up_user(new_user):
     try:
         response = cognito_client.sign_up(
-            ClientId=Config.cognito_app_client_id,
+            ClientId=cognito_app_client_id,
             Username=new_user.username,
             Password=new_user.password,
             UserAttributes=[
@@ -56,7 +59,7 @@ async def sign_up_user(new_user):
 async def verify_user_email(new_user):
     try:
         cognito_client.admin_update_user_attributes(
-            UserPoolId=Config.cognito_pool_id,
+            UserPoolId=cognito_pool_id,
             Username=new_user.username,
             UserAttributes=[
                 {
@@ -75,7 +78,7 @@ async def add_user_to_roles(new_user):
         roles = new_user.roles
         for role in roles:
             cognito_client.admin_add_user_to_group(
-                UserPoolId=Config.cognito_pool_id,
+                UserPoolId=cognito_pool_id,
                 Username=new_user.username,
                 GroupName=role
             )
@@ -166,7 +169,7 @@ async def send_password_email(new_user):
 
 async def delete_user_from_cognito(username: str):
     response = cognito_client.admin_delete_user(
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         Username=username
     )
     if response['ResponseMetadata']['HTTPStatusCode'] == 200:
@@ -182,7 +185,7 @@ async def check_user_role(current_user, permit_roles):
 
 async def retrieve_all_users():
     response = cognito_client.list_users(
-        UserPoolId=Config.cognito_pool_id
+        UserPoolId=cognito_pool_id
     )
     return [user['Username'] for user in response['Users']]
 
@@ -201,7 +204,7 @@ async def create_permissions_list(user_group):
 async def create_group(user_group, permissions):
     response = cognito_client.create_group(
         GroupName=user_group.group_name,
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         Description=f"{permissions}"
     )
     if response['ResponseMetadata']['HTTPStatusCode'] == 200:
@@ -211,7 +214,7 @@ async def create_group(user_group, permissions):
 async def add_users_to_group(user_group):
     for user in user_group.users:
         res = cognito_client.admin_add_user_to_group(
-            UserPoolId=Config.cognito_pool_id,
+            UserPoolId=cognito_pool_id,
             Username=user.user_name,
             GroupName=user_group.group_name
         )
@@ -222,7 +225,7 @@ async def add_users_to_group(user_group):
 
 async def add_user_to_cognito_group(username: str, group_name: str):
     response = cognito_client.admin_add_user_to_group(
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         Username=username,
         GroupName=group_name,
     )
@@ -233,14 +236,14 @@ async def add_user_to_cognito_group(username: str, group_name: str):
 # groups details
 async def retrieve_all_groups():
     response = cognito_client.list_groups(
-        UserPoolId=Config.cognito_pool_id
+        UserPoolId=cognito_pool_id
     )
     return [group['GroupName'] for group in response['Groups']]
 
 
 async def retrieve_users_in_group(group_name):
     response = cognito_client.list_users_in_group(
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         GroupName=group_name
     )
     return len(response['Users'])
@@ -249,7 +252,7 @@ async def retrieve_users_in_group(group_name):
 # group detail
 async def retrieve_group_details(group_name):
     response = cognito_client.get_group(
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         GroupName=group_name
     )
     return response
@@ -271,7 +274,7 @@ async def process_permissions(group_details):
 # get user names
 async def retrieve_all_usernames():
     response = cognito_client.list_users(
-        UserPoolId=Config.cognito_pool_id
+        UserPoolId=cognito_pool_id
     )
     return [{"user_name": user['Username']} for user in response['Users']]
 
@@ -279,7 +282,7 @@ async def retrieve_all_usernames():
 # get all users
 async def retrieve_all_usernames_2():
     response = cognito_client.list_users(
-        UserPoolId=Config.cognito_pool_id
+        UserPoolId=cognito_pool_id
     )
     print(response['Users'])
     return [user['Username'] for user in response['Users']]
@@ -287,18 +290,18 @@ async def retrieve_all_usernames_2():
 
 async def retrieve_all_data():
     users = cognito_client.list_users(
-        UserPoolId=Config.cognito_pool_id
+        UserPoolId=cognito_pool_id
     )
     # list all groups
     groups = cognito_client.list_groups(
-        UserPoolId=Config.cognito_pool_id
+        UserPoolId=cognito_pool_id
     )
 
     # list all users in a group {group:, users:[]}
     group_data = []
     for group in groups['Groups']:
         response = cognito_client.list_users_in_group(
-            UserPoolId=Config.cognito_pool_id,
+            UserPoolId=cognito_pool_id,
             GroupName=group['GroupName']
         )
         group_data.append({
@@ -328,7 +331,7 @@ async def retrieve_all_data():
 
 async def retrieve_user_details(username):
     user_data = cognito_client.admin_get_user(
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         Username=username
     )
     user_email = [attr['Value'] for attr in user_data['UserAttributes'] if attr['Name'] == 'email'][0]
@@ -339,7 +342,7 @@ async def retrieve_user_details(username):
 async def retrieve_user_groups(username):
     user_groups = cognito_client.admin_list_groups_for_user(
         Username=username,
-        UserPoolId=Config.cognito_pool_id
+        UserPoolId=cognito_pool_id
     )
     return [group['GroupName'] for group in user_groups['Groups']]
 
@@ -347,7 +350,7 @@ async def retrieve_user_groups(username):
 # get group members
 async def retrieve_group_members(group_name):
     response = cognito_client.list_users_in_group(
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         GroupName=group_name
     )
     return response
@@ -366,7 +369,7 @@ async def prepare_permissions(permissions):
 
 async def update_group(group_name, permissions):
     response = cognito_client.update_group(
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         GroupName=group_name,
         Description=permissions
     )
@@ -377,7 +380,7 @@ async def update_group(group_name, permissions):
 # update user
 async def update_user_attributes(new_user):
     response = cognito_client.admin_update_user_attributes(
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         Username=new_user.username,
         UserAttributes=[
             {
@@ -401,7 +404,7 @@ async def update_user_attributes(new_user):
 async def get_user_groups(username):
     response = cognito_client.admin_list_groups_for_user(
         Username=username,
-        UserPoolId=Config.cognito_pool_id
+        UserPoolId=cognito_pool_id
     )
     return response
 
@@ -410,7 +413,7 @@ async def remove_user_from_all_groups(username, groups):
     response = None
     for group in groups['Groups']:
         response = cognito_client.admin_remove_user_from_group(
-            UserPoolId=Config.cognito_pool_id,
+            UserPoolId=cognito_pool_id,
             Username=username,
             GroupName=group['GroupName']
         )
@@ -422,7 +425,7 @@ async def add_user_to_new_groups(username, roles):
     response = None
     for role in roles:
         response = cognito_client.admin_add_user_to_group(
-            UserPoolId=Config.cognito_pool_id,
+            UserPoolId=cognito_pool_id,
             Username=username,
             GroupName=role
         )
@@ -433,7 +436,7 @@ async def add_user_to_new_groups(username, roles):
 # disable user
 async def disable_user_in_cognito(username):
     response = cognito_client.admin_disable_user(
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         Username=username
     )
     if response['ResponseMetadata']['HTTPStatusCode'] == 200:
@@ -443,7 +446,7 @@ async def disable_user_in_cognito(username):
 # enable user
 async def check_user_disabled(username):
     response = cognito_client.admin_get_user(
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         Username=username
     )
     return response
@@ -451,7 +454,7 @@ async def check_user_disabled(username):
 
 async def enable_user_in_cognito(username):
     response = cognito_client.admin_enable_user(
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         Username=username
     )
     if response['ResponseMetadata']['HTTPStatusCode'] == 200:

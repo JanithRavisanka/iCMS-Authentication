@@ -7,6 +7,12 @@ from pydantic import BaseModel
 from app.config.config import Config
 from app.utils.admin_functions import extract_permissions, get_user_groups, process_group_descriptions
 
+#import env
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
 
 class TokenPayload(BaseModel):
     sub: str
@@ -15,9 +21,14 @@ class TokenPayload(BaseModel):
     permissions: list
 
 
-cognito_region = Config.cognito_region
-cognito_pool_id = Config.cognito_pool_id
-cognito_app_client_id = Config.cognito_app_client_id
+# cognito_region = Config.cognito_region
+# cognito_pool_id = Config.cognito_pool_id
+# cognito_app_client_id = Config.cognito_app_client_id
+# cognito_keys_url = f'https://cognito-idp.{cognito_region}.amazonaws.com/{cognito_pool_id}/.well-known/jwks.json'
+
+cognito_region  = os.getenv('AWS_DEFAULT_REGION')
+cognito_pool_id = os.getenv('AWS_COGNITO_USER_POOL_ID')
+cognito_app_client_id = os.getenv('AWS_COGNITO_CLIENT_ID')
 cognito_keys_url = f'https://cognito-idp.{cognito_region}.amazonaws.com/{cognito_pool_id}/.well-known/jwks.json'
 
 

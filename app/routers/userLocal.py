@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, Body, UploadFile, File, Response, HTTPException
 from starlette.responses import JSONResponse
 
-from app.config.config import Config
+# from app.config.config import Config
 from app.models.changePassword import ChangePassword
 from app.utils.auth import get_current_user
 
@@ -15,6 +15,10 @@ load_dotenv()
 aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
 aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
 aws_default_region = os.getenv('AWS_DEFAULT_REGION')
+cognito_pool_id = os.getenv('AWS_COGNITO_USER_POOL_ID')
+cognito_app_client_id = os.getenv('AWS_COGNITO_CLIENT_ID')
+s3_bucket_name = os.getenv('AWS_S3_BUCKET')
+dynamodb_user_logs = os.getenv('DYNAMODB_USER_LOGS_TABLE')
 
 user_router = APIRouter()
 
@@ -26,7 +30,7 @@ dynamodb = resource(
     aws_access_key_id=aws_access_key_id,
     aws_secret_access_key=aws_secret_access_key
 )
-table = dynamodb.Table('icsms-user-activity-logs')
+table = dynamodb.Table(dynamodb_user_logs)
 
 
 async def log_to_dynamodb(username: str, action: str, is_success: bool):
@@ -89,7 +93,7 @@ async def upload_file_to_s3(file: UploadFile, user):
     file_content = await file.read()
     s3_client = client('s3')
     s3_client.put_object(
-        Bucket=Config.s3_bucket_name,
+        Bucket=s3_bucket_name,
         Key=key,
         Body=file_content
     )
@@ -99,7 +103,7 @@ async def upload_file_to_s3(file: UploadFile, user):
 # Helper function to update Cognito user attributes
 def update_cognito_user_attributes(username: str, attributes: list):
     cognito_client.admin_update_user_attributes(
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         Username=username,
         UserAttributes=attributes
     )
@@ -108,7 +112,7 @@ def update_cognito_user_attributes(username: str, attributes: list):
 # Helper function to get user attributes from Cognito
 def get_cognito_user_attributes(username: str):
     return cognito_client.admin_get_user(
-        UserPoolId=Config.cognito_pool_id,
+        UserPoolId=cognito_pool_id,
         Username=username
     )['UserAttributes']
 
@@ -127,7 +131,7 @@ async def read_users_me(current_user=Depends(get_current_user)):
 async def upload_profile_image(file: UploadFile = File(...), user=Depends(get_current_user)):
     try:
         key = await upload_file_to_s3(file, user)
-        profile_image_url = f"https://{Config.s3_bucket_name}.s3.ap-south-1.amazonaws.com/{key}"
+        profile_image_url = f"https://{s3_bucket_name}.s3.{aws_default_region}.amazonaws.com/{key}"
         update_cognito_user_attributes(user.username, [
             {
                 'Name': 'custom:profile_image',
